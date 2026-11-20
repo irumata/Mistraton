@@ -1,0 +1,40 @@
+{
+	email {$ACME_EMAIL}
+	admin off
+}
+
+:2015 {
+	bind 127.0.0.1
+	respond /health "ok"
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+	header {
+		-Server
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		X-Frame-Options DENY
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'"
+	}
+	request_body {
+		max_size 16KB
+	}
+	@backend path /api /api/* /webhooks /webhooks/*
+	handle @backend {
+		reverse_proxy {
+			dynamic a api 8000 {
+				resolvers 127.0.0.11
+				versions ipv4
+				refresh 5s
+			}
+			lb_policy round_robin
+			lb_try_duration 3s
+		}
+	}
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}

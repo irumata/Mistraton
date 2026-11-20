@@ -221,3 +221,22 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Mistraton runtime and frontend
+.env
+.env.*
+!.env.example
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.pyc
+node_modules/
+dist/
+backups/
+*.dump
+*.pem
+*.key
+*.tsbuildinfo
+.DS_Store
+work/

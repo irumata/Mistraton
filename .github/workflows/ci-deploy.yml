@@ -1,0 +1,108 @@
+name: Check and deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    # Private repos can incur Actions charges after their allowance. Enable only after setting a spending stop.
+    if: github.event.repository.private == false || vars.CI_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Backend checks
+        working-directory: backend
+        run: |
+          python -m pip install --require-hashes -r requirements-dev.txt
+          ruff check .
+          pytest -q
+      - name: Frontend checks
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+      - name: Shell syntax
+        run: |
+          for script in scripts/*.sh; do bash -n "$script"; done
+      - name: Build and run two API replicas and two workers
+        run: |
+          python scripts/configure.py --local
+          sed -i 's/API_REPLICAS=1/API_REPLICAS=2/; s/WORKER_REPLICAS=1/WORKER_REPLICAS=2/' .env
+          bash scripts/up.sh
+          python scripts/smoke.py --expect-replicas 2
+      - name: Database backup and restore check
+        run: |
+          BACKUP_DIR="$RUNNER_TEMP/backups" bash scripts/backup.sh
+          dump_file="$(find "$RUNNER_TEMP/backups" -name '*.dump' -type f | head -1)"
+          bash scripts/restore.sh --confirm-replace "$dump_file"
+          python scripts/smoke.py --expect-replicas 2
+      - name: Container logs on failure
+        if: failure()
+        run: bash scripts/compose.sh logs --tail 80 || true
+      - name: Clean up temporary test data
+        if: always()
+        run: bash scripts/compose.sh down --volumes || true
+
+  deploy:
+    needs: checks
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment: production
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
+    env:
+      SSH_HOST: ${{ vars.SSH_HOST || '130.162.187.46' }}
+      SSH_USER: ${{ vars.SSH_USER || 'deploy' }}
+      SSH_PORT: ${{ vars.SSH_PORT || '22' }}
+      DEPLOY_DOMAIN: ${{ vars.DEPLOY_DOMAIN }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Verify settings and prepare pinned SSH host key
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          [[ "$SSH_HOST" =~ ^[a-zA-Z0-9.-]+$ ]]
+          [[ "$SSH_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]
+          [[ "$SSH_PORT" =~ ^[0-9]{1,5}$ ]] && (( SSH_PORT > 0 && SSH_PORT < 65536 ))
+          [[ "$DEPLOY_DOMAIN" =~ ^[a-z0-9][a-z0-9.-]+[a-z0-9]$ ]]
+          test -n "$SSH_PRIVATE_KEY" && test -n "$SSH_KNOWN_HOSTS"
+          umask 077
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          ssh-keygen -y -f ~/.ssh/deploy_key > /dev/null
+      - name: Upload exact checked commit and deploy on VM
+        run: |
+          set -euo pipefail
+          options=(-i "$HOME/.ssh/deploy_key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30 -o ServerAliveCountMax=10)
+          git archive --format=tar "$GITHUB_SHA" | gzip > "$RUNNER_TEMP/release.tgz"
+          ssh "${options[@]}" -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "mkdir -p ~/hackathon/incoming ~/hackathon/releases/$GITHUB_SHA"
+          scp "${options[@]}" -P "$SSH_PORT" "$RUNNER_TEMP/release.tgz" "$SSH_USER@$SSH_HOST:hackathon/incoming/$GITHUB_SHA.tgz"
+          ssh "${options[@]}" -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "tar -xzf ~/hackathon/incoming/$GITHUB_SHA.tgz -C ~/hackathon/releases/$GITHUB_SHA && bash ~/hackathon/releases/$GITHUB_SHA/scripts/deploy.sh $GITHUB_SHA && rm -f ~/hackathon/incoming/$GITHUB_SHA.tgz"
+      - name: Verify public HTTPS readiness
+        run: curl --fail --silent --show-error --retry 8 --retry-all-errors --retry-delay 5 --max-time 20 "https://$DEPLOY_DOMAIN/api/ready"
+      - name: Remove temporary private key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
