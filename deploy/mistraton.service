@@ -1,0 +1,15 @@
+[Unit]
+Description=Mistraton API
+After=network.target
+
+[Service]
+WorkingDirectory=%h/mistraton/backend
+EnvironmentFile=%h/.config/mistraton.env
+ExecStart=/usr/bin/python3 -u %h/mistraton/backend/server.py
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+UMask=0077
+
+[Install]
+WantedBy=default.target

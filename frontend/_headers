@@ -1,0 +1,7 @@
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Content-Security-Policy: default-src 'self'; connect-src https: http://localhost:8000; object-src 'none'; base-uri 'none'; frame-ancestors 'none'
+
+/config.js
+  Cache-Control: no-cache

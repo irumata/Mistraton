@@ -1,0 +1,67 @@
+name: Test and deploy
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - name: Test API
+        run: python3 -m unittest discover -s backend -v
+      - name: Check frontend JavaScript
+        run: |
+          node --check frontend/config.js
+          node --check frontend/app.js
+
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: test
+    runs-on: ubuntu-24.04
+    environment: production
+    concurrency:
+      group: oracle-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - name: Deploy API to Oracle VM
+        shell: bash
+        env:
+          VM_HOST: ${{ secrets.OCI_HOST }}
+          VM_USER: ${{ secrets.OCI_USER }}
+          SSH_PRIVATE_KEY: ${{ secrets.OCI_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.OCI_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          [[ "$VM_HOST" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ ]] || { echo "Invalid OCI_HOST (use IPv4 or DNS)"; exit 1; }
+          [[ "$VM_USER" =~ ^[a-z_][a-z0-9_-]*$ ]] || { echo "Invalid OCI_USER"; exit 1; }
+          [[ -n "$SSH_PRIVATE_KEY" && -n "$SSH_KNOWN_HOSTS" ]] || { echo "Missing SSH secrets"; exit 1; }
+          ssh_dir=$(mktemp -d)
+          trap 'rm -rf "$ssh_dir"' EXIT
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$ssh_dir/key"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$ssh_dir/known_hosts"
+          chmod 600 "$ssh_dir/key" "$ssh_dir/known_hosts"
+          options=(-i "$ssh_dir/key" -o "UserKnownHostsFile=$ssh_dir/known_hosts" -o StrictHostKeyChecking=yes -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15)
+          target="$VM_USER@$VM_HOST"
+          ssh "${options[@]}" "$target" 'mkdir -p "$HOME/mistraton/backend"'
+          scp "${options[@]}" backend/server.py "$target:mistraton/backend/server.py.next"
+          ssh "${options[@]}" "$target" 'bash -se' <<'REMOTE'
+          set -euo pipefail
+          export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+          cd "$HOME/mistraton/backend"
+          python3 -m py_compile server.py.next
+          mv server.py.next server.py
+          systemctl --user restart mistraton
+          curl --fail --silent --show-error --retry 10 --retry-connrefused --retry-delay 1 --max-time 5 http://127.0.0.1:8000/api/health
+          REMOTE
