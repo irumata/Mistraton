@@ -1,3 +1,18 @@
+# Mistralethon — **SAFETRAL** · Le Chonk in London hackathon submission (21 Nov 2026)
+
+**What it is:** an AI-powered security-monitoring demo. A live Mistral Large 4 agent works against a local GitHub-like service; the safetral pipeline watches for the classic MCP-style incident — a public issue that triggers a **private-repository read followed by a public publication** — detected by numerical forecast bands (Timestral panel) + deterministic boundary rules, then reviewed and escalated/dismissed by a separate Mistral Large 4 reviewer. Pixel-themed dashboard (Watch / Pipeline / Timestral / Upload panels) with live SSE event stream, recorded-run replay, and **voice alerts via Voxtral TTS** (`/api/voice/*`).
+
+- **Live demo:** https://safestral.dpdns.org/ — HTTP Basic login: username `safestral`, password in the submission notes
+- **Demo video:** see submission (video field) — recorded run + live alert + voice playback
+- **Repo:** https://github.com/mistraton/Mistraton (this repo)
+- **Quickstart:** `docker compose up --build` (see SETUP.md / OPERATIONS.md)
+
+**Mistral tech used:** Mistral Large 4 (live agent + independent reviewer) · **Voxtral TTS** (`POST /api/voice/say`, Special_03) · Timestral forecast panel (`/sentinel/timestral/chat`) · Vibe-built (this branch was prepared with Vibe). Tracks: Track_01 (+ Special_03 if voice enabled at submit time — verify `GET /api/voice/status`).
+
+**Notes for judges:** secrets scan is clean (`git grep` for keys/.env — empty). Recent Actions runs fail because the deploy workflow needs VM secrets; the app is live and healthy at the URL above. Demo plan & acceptance checks: `docs/SAFETRAL-DEMO-PLAN.md`.
+
+---
+
 # Mistralethon
 my small change
 A working React/Vite frontend, FastAPI API, PostgreSQL 17 database and Caddy HTTPS gateway for the Oracle Linux 9 **x86_64** VM at `130.162.187.46`.
