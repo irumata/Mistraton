@@ -1,0 +1,9 @@
+{
+  "incident_id": "aiid-1781",
+  "timestamp_start": "2026-09-01T00:00:00Z",
+  "timestamp_end": "2026-09-02T00:00:00Z",
+  "severity_hint": "severe: AI-driven nation-state supply-chain compromise of an IT services provider; hundreds of organizations targeted globally via stolen cloud-backup credentials (MIT harm scale 4 of 5)",
+  "linked_records": [
+    "https://incidentdatabase.ai/cite/1781"
+  ]
+}

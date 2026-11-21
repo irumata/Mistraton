@@ -1,0 +1,7 @@
+{
+  "incident_id": "hf-agent-failures",
+  "timestamp_start": "2026-08-03T00:00:00Z",
+  "timestamp_end": "2026-08-04T00:00:00Z",
+  "severity_hint": "mixed; labeled agent failure events (process_error, language_corruption, contract_violation, scheduler_starvation)",
+  "linked_records": ["https://huggingface.co/datasets/GXCafe/ai-agent-failure-logs"]
+}

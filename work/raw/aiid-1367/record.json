@@ -1,0 +1,7 @@
+{
+  "incident_id": "aiid-1367",
+  "timestamp_start": "2026-01-18T00:00:00Z",
+  "timestamp_end": "2026-01-18T01:00:00Z",
+  "severity_hint": "severe: 7 of 10 aboard hospitalized after upper deck sheared off (MIT harm scale 4 of 5)",
+  "linked_records": ["https://incidentdatabase.ai/cite/1367"]
+}

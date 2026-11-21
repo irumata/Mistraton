@@ -1,0 +1,7 @@
+{
+  "incident_id": "aiid-1361",
+  "timestamp_start": "2026-01-23T00:00:00Z",
+  "timestamp_end": "2026-01-23T01:00:00Z",
+  "severity_hint": "severe/catastrophic: physical harm to a minor (MIT harm scale 4-5 of 5)",
+  "linked_records": ["https://incidentdatabase.ai/cite/1361"]
+}
