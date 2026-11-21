@@ -12,6 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from datetime import timedelta
 from functools import partial
+from itertools import batched
 from pathlib import Path
 from threading import Lock
 from typing import Literal
@@ -34,7 +35,8 @@ DEFAULT_QUESTION = 'Investigate this incident. Which signal best shows degraded 
 MAX_ACTIVE = 8
 MAX_RETAINED = 64
 RETENTION_SECONDS = 3600
-MAX_VERIFY = 6
+SHIELD_BATCH_SIZE = 4
+REVIEW_BATCH_SIZE = 6
 MAX_VOICE_TRACE_POINTS = 160
 MAX_VOICE_CANDIDATES = 12
 DEFAULT_SHIELD_THRESHOLD = .1
@@ -96,7 +98,7 @@ class Finding(BaseModel):
 
 
 class Review(BaseModel):
-    findings: list[Finding] = Field(max_length=MAX_VERIFY)
+    findings: list[Finding] = Field(max_length=REVIEW_BATCH_SIZE)
 
 
 class ThresholdUpdate(BaseModel):
@@ -176,37 +178,57 @@ def apply_candidate_threshold(candidate: dict, threshold: float) -> None:
 
 def verify_candidates(candidates: list[dict], metric: dict, baseline: dict, models: InvestigationModels, report,
                       shield_threshold: float) -> bool:
-    selected = sorted(candidates, key=lambda candidate: candidate['peak']['relative_excess'], reverse=True)[:MAX_VERIFY]
-    if not selected:
+    if not candidates:
         report('verify', 'skipped', 'Timestral found no sustained departures.')
         return False
-    report('verify', 'running', f'Shieldstral is checking the {len(selected)} strongest candidates.')
-    selected_ids = {candidate['id'] for candidate in selected}
-    for candidate in candidates:
-        if candidate['id'] not in selected_ids:
-            candidate['status'] = 'unreviewed'
-    for number, candidate in enumerate(selected, start=1):
-        score = models.shield(
+    report('verify', 'running', f'Shieldstral is checking {len(candidates)} candidates.')
+    checked = 0
+    for batch in batched(candidates, SHIELD_BATCH_SIZE):
+        scores = models.shield_many(
             'Check monitoring evidence for a persistent, meaningful deviation. Ordinary variation, weak evidence, '
             'or insufficient samples should not alert. A deviation may justify triage even when its cause is unknown.',
             'Should a monitoring operator investigate this deviation?',
-            {'metric': metric['metric'], 'baseline': baseline, 'candidate': candidate},
+            [{'metric': metric['metric'], 'baseline': baseline, 'candidate': candidate} for candidate in batch],
         )
-        candidate['shield_score'] = score
-        apply_candidate_threshold(candidate, shield_threshold)
-        report('verify', 'running', f'Checked {number} of {len(selected)} candidates.', candidates=candidates)
-    verified = [candidate for candidate in selected if candidate['status'] == 'verified']
-    report('verify', 'done', f'Shieldstral passed {len(verified)} of {len(selected)} candidates at the run threshold of {shield_threshold}.',
+        if len(scores) != len(batch):
+            raise InvestigationError('Shieldstral returned incomplete candidate scores.')
+        for candidate, score in zip(batch, scores, strict=True):
+            candidate['shield_score'] = score
+            apply_candidate_threshold(candidate, shield_threshold)
+        checked += len(batch)
+        report('verify', 'running', f'Checked {checked} of {len(candidates)} candidates.', candidates=candidates)
+    passed = sum(candidate['status'] == 'verified' for candidate in candidates)
+    report('verify', 'done', f'Shieldstral passed {passed} of {checked} candidates at the run threshold of {shield_threshold}.',
            candidates=candidates)
-    return bool(verified)
+    return passed > 0
 
 
 def review_verified(candidates: list[dict], result: dict, question: str, models: InvestigationModels, report,
                     shield_threshold: float) -> None:
     verified = [candidate for candidate in candidates if candidate['status'] == 'verified']
-    report('review', 'running', f'Large 4 is investigating {len(verified)} candidates that passed Shieldstral.')
+    report('review', 'running', f'Mistral Small 4 is investigating {len(verified)} candidates that passed Shieldstral.')
+    context = {
+        'operator_question': question, 'incident_summary': result['plan']['summary'],
+        'metric': result['metric']['metric'], 'interval_seconds': result['metric']['interval_seconds'],
+        'baseline': result['baseline'], 'shield_threshold': shield_threshold,
+    }
+    processed = 0
+    for batch in batched(verified, REVIEW_BATCH_SIZE):
+        review_batch(batch, context, models, shield_threshold)
+        processed += len(batch)
+        report('review', 'running', f'Processed {processed} of {len(verified)} candidates.', candidates=candidates)
+    supported = sum(candidate['status'] == 'supported' for candidate in verified)
+    pending = len(verified) - supported
+    unavailable = sum(candidate['review_decision'] == 'unavailable' for candidate in verified)
+    status = 'skipped' if unavailable == len(verified) else 'done'
+    detail = (f'Mistral Small 4 returned {len(verified) - unavailable} of {len(verified)} reviews. '
+              f'{supported} warrant triage and {pending} need manual review.')
+    report('review', status, detail, candidates=candidates)
+
+
+def review_batch(batch: tuple[dict, ...], context: dict, models: InvestigationModels, shield_threshold: float) -> None:
     review_rows = []
-    for candidate in verified:
+    for candidate in batch:
         peak = candidate['peak']
         review_rows.append({'id': candidate['id'], 'start': candidate['start'], 'end': candidate['end'],
                             'peak_time': peak['time'], 'observed': peak['observed'],
@@ -214,36 +236,25 @@ def review_verified(candidates: list[dict], result: dict, question: str, models:
                             'direction': candidate['direction'], 'intervals': candidate['observations'],
                             'shield_score': candidate['shield_score']})
     try:
-        review = Review.model_validate(models.large_json(REVIEW_PROMPT, {
-            'operator_question': question, 'incident_summary': result['plan']['summary'],
-            'metric': result['metric']['metric'], 'interval_seconds': result['metric']['interval_seconds'],
-            'baseline': result['baseline'],
-            'shield_threshold': shield_threshold, 'candidates': review_rows,
-        }, constrain_json=False))
+        review = Review.model_validate(models.review_json(REVIEW_PROMPT, {**context, 'candidates': review_rows}))
         findings = {finding.id: finding for finding in review.findings}
-        if set(findings) != {candidate['id'] for candidate in verified} or len(findings) != len(review.findings):
-            raise InvestigationError('Large 4 returned a review that did not match the candidates.')
+        if set(findings) != {candidate['id'] for candidate in batch} or len(findings) != len(review.findings):
+            raise InvestigationError('The review response did not match the candidates.')
     except (InvestigationError, ValidationError) as exc:
-        logger.warning('Large 4 episode review unavailable: %s', type(exc).__name__)
-        for candidate in verified:
+        logger.warning('Episode review unavailable: %s', type(exc).__name__)
+        for candidate in batch:
             candidate.update(review_decision='unavailable', review_threshold=shield_threshold,
-                             explanation='Large 4 returned no usable decision.',
+                             explanation='Mistral Small 4 returned no usable decision.',
                              next_check='Compare the peak interval with independent telemetry or event logs.')
             apply_candidate_threshold(candidate, shield_threshold)
-        report('review', 'skipped', 'Large 4 returned no usable decision. The candidates remain available for manual review.',
-               candidates=candidates)
         return
-    for candidate in verified:
+    for candidate in batch:
         finding = findings[candidate['id']]
         candidate.update(review_decision=finding.decision,
                          review_supported=None if finding.decision == 'needs_review' else finding.decision == 'triage',
                          review_threshold=shield_threshold, explanation=finding.explanation,
                          hypotheses=finding.hypotheses, next_check=finding.next_check)
         apply_candidate_threshold(candidate, shield_threshold)
-    supported = sum(candidate['status'] == 'supported' for candidate in verified)
-    pending = len(verified) - supported
-    report('review', 'done', f'Large 4 reviewed {len(verified)} candidates. {supported} warrant triage and {pending} need manual review.',
-           candidates=candidates)
 
 
 def public_timeline_files() -> tuple[bytes, bytes]:
@@ -289,7 +300,7 @@ def investigate(payload: bytes, prompt: str, models: InvestigationModels, report
     report('investigate', 'done', f"Selected {metric['metric']}." if metric else 'Prepared an instrumentation plan.',
            plan=plan.model_dump(), metric=metric,
            policy={'shield_threshold': shield_threshold, 'review_shield_threshold': shield_threshold,
-                   'baseline_shield_threshold': BASELINE_SHIELD_THRESHOLD, 'review_limit': MAX_VERIFY,
+                   'baseline_shield_threshold': BASELINE_SHIELD_THRESHOLD,
                    'max_missing_intervals': MAX_MISSING_INTERVALS})
     if metric is None or not metric['eligible_for_detection']:
         if not catalog:
@@ -341,7 +352,7 @@ def investigate(payload: bytes, prompt: str, models: InvestigationModels, report
         review_verified(candidates, {'metric': metric, 'baseline': baseline, 'plan': plan.model_dump()},
                         prompt, models, report, shield_threshold)
     else:
-        detail = 'No candidates passed Shieldstral for Large 4 review.' if candidates else 'There were no candidates for triage review.'
+        detail = 'No candidates passed Shieldstral for review.' if candidates else 'There were no candidates for triage review.'
         report('review', 'skipped', detail)
 
 
@@ -379,7 +390,7 @@ class InvestigationRuns:
                 'id': run_id, 'filename': filename, 'question': prompt, 'status': 'queued', 'result': {},
                 'stages': {stage: {'status': 'pending', 'detail': ''} for stage in STAGES},
                 'models': {'investigate': models.large_model, 'calibrate': models.shield_model,
-                           'detect': models.timestral_model, 'verify': models.shield_model, 'review': models.large_model},
+                           'detect': models.timestral_model, 'verify': models.shield_model, 'review': models.review_model},
             }}
             operation = partial(investigate, payload, prompt, models, filename=filename, attachments=attachments,
                                 shield_threshold=shield_threshold, public_timeline=public_timeline,
@@ -441,6 +452,8 @@ class InvestigationRuns:
             stride = max(1, (len(trace) + MAX_VOICE_TRACE_POINTS - 1) // MAX_VOICE_TRACE_POINTS)
             candidates = result.get('candidates', [])
             selected = sorted(candidates, key=lambda item: item['peak']['relative_excess'], reverse=True)
+            strongest = selected[0] if selected else None
+            briefing_episode = next((item for item in selected if item['status'] == 'supported'), strongest)
             return deepcopy({
                 'filename': view['filename'], 'investigation_status': view['status'],
                 'stage_statuses': {key: stage['status'] for key, stage in view['stages'].items()},
@@ -452,6 +465,7 @@ class InvestigationRuns:
                 'candidate_count': len(candidates),
                 'triage_count': sum(item['status'] == 'supported' for item in candidates),
                 'largest_candidates': selected[:MAX_VOICE_CANDIDATES],
+                'briefing_episode': briefing_episode,
                 'trace_points': len(trace), 'trace_stride': stride, 'trace': trace[::stride],
             })
 

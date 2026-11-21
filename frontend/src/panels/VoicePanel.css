@@ -43,9 +43,13 @@
 }
 
 .voice-transcript {
-  display: grid;
-  gap: 10px;
   width: 100%;
+  max-height: min(45vh, 360px);
+  overflow-y: auto;
+}
+
+.voice-transcript > * + * {
+  margin-top: 10px;
 }
 
 .voice-message {
@@ -92,10 +96,15 @@
   cursor: pointer;
 }
 
-.voice-question {
+.voice-card .voice-question {
   display: flex;
   gap: 8px;
   width: 100%;
+  margin: 0;
+}
+
+.voice-card .voice-question button {
+  margin: 0;
 }
 
 .voice-card audio {

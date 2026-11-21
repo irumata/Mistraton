@@ -70,14 +70,15 @@ availability still depends on the Colab runtime being online.
    Le Chonk’s choice. **Shieldstral baseline check** shows whether the early
    evidence was accepted and how that affected the Timestral band. Under
    **Episode decisions**, compare the measured departure, Shieldstral’s yes/no
-   verdict, and Large 4’s assessment of episodes that pass Shieldstral. Large 4
-   considers plausible explanations and suggests a check that could distinguish
+   verdict, and Mistral Small 4’s assessment of episodes that pass. Shieldstral
+   scores all detected episodes in batches. Small 4 considers plausible
+   explanations and suggests a check that could distinguish
    them. Each detected episode stays visible with the checks it reached. If the evidence
    has only a report, the run can recommend instrumentation. A detector
    requires at least 16 populated time intervals for the selected metric.
 5. In a completed replay with scored episodes, edit **Shieldstral candidate
    threshold** and select **Apply threshold**. The replay reuses the saved
-   scores and Large 4 reviews. Newly passing episodes are sent to Large 4.
+   scores and reviews. Newly passing episodes are sent to Mistral Small 4.
    Baseline calibration uses its own 0.5 cutoff.
 6. **Evidence used** shows the files and upload fingerprint. Each browser tab
    has independent access to its run, including after a reload. Results

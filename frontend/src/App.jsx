@@ -11,7 +11,7 @@ const previewCandidates = sampleInvestigation(investigationStages.length).result
 const workflow = [
   ['Le Chonk (Mistral Large 4)', 'Find the signal', 'Compares the metrics found in the incident files and explains which one to monitor.'],
   ['Shieldstral + Timestral', 'Detect deviations', 'Shieldstral checks the baseline. Timestral forecasts the expected range and sustained departures become candidates.'],
-  ['Shieldstral + Le Chonk', 'Decide what warrants triage', 'Shieldstral screens the shortlisted candidates. Large 4 investigates those that pass and suggests what to check next.'],
+  ['Shieldstral + Mistral Small 4', 'Decide what warrants triage', 'Shieldstral checks every candidate. Mistral Small 4 investigates those that pass and suggests what to check next.'],
 ]
 
 export default function App() {

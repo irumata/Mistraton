@@ -70,7 +70,7 @@ function IncidentForm({ busy, uploading, error, setError, submit, submitHuggingF
             <input id="upload-shield-threshold" name="shieldThreshold" type="number" min={0} max={1} step="any"
               value={threshold} onChange={event => setThreshold(event.target.value)} required inputMode="decimal"
               aria-describedby="upload-shield-threshold-help" />
-            <p className="field-note" id="upload-shield-threshold-help">Large 4 investigates candidates with a Shieldstral score at or above this cutoff.</p>
+            <p className="field-note" id="upload-shield-threshold-help">Mistral Small 4 investigates candidates with a Shieldstral score at or above this cutoff.</p>
           </div>
           <button className="primary-action" disabled={!file || busy} type="submit">
             {uploading ? 'Uploading…' : 'Build monitor'}
@@ -175,9 +175,7 @@ function MonitorReplay({ result, models, sample, finished }) {
       </dl>
       {visibleCandidates.length > 0 && <div className="candidate-list">
         <h3>Episode decisions</h3>
-        <p className="field-note">Shieldstral decides which episodes go to Large 4. All detected episodes remain visible in the replay.</p>
-        {policy?.review_limit && visibleCandidates.some(candidate => candidate.status === 'unreviewed') &&
-          <p className="field-note">Shieldstral checks up to {policy.review_limit} episodes, ranked by the size of their departures from the forecast range.</p>}
+        <p className="field-note">Shieldstral decides which episodes go to Mistral Small 4. All detected episodes remain visible in the replay.</p>
         {visibleCandidates.map(candidate => <EpisodeDecision key={candidate.id} candidate={candidate}
           plan={plan} policy={policy} models={models} interval={metric.interval_seconds} finished={finished} />)}
       </div>}

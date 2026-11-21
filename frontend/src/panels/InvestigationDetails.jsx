@@ -6,7 +6,7 @@ const OUTCOMES = {
   needs_review: 'Needs manual review',
   dismissed_on_review: 'Dismissed after review',
   shield_below_threshold: 'Below Shieldstral threshold',
-  unreviewed: 'Review limit reached',
+  unreviewed: 'Shieldstral check skipped',
   verified: 'Passed Shieldstral',
   candidate: 'Awaiting Shieldstral',
 }
@@ -56,7 +56,7 @@ export function InvestigationOutcome({ view }) {
       detail = [
         `${triage} of ${total} candidates passed both checks.`,
         pending ? `${pending} need manual review.` : '',
-        unreviewed ? `${unreviewed} exceeded the review limit.` : '',
+        unreviewed ? `${unreviewed} skipped Shieldstral verification.` : '',
       ].filter(Boolean).join(' ')
     }
   }
@@ -100,7 +100,7 @@ export function ShieldThresholdControl({ candidates, policy, update }) {
       </button>
     </div>
     <p className="field-note" id="run-shield-threshold-help">
-      Applying reuses saved scores and reviews. Newly passing episodes go to Large 4.
+      Applying reuses saved scores and reviews. Newly passing episodes go to Mistral Small 4.
     </p>
     <p className="threshold-status" role="status">{passed} of {scored.length} scored candidates pass Shieldstral at {applied}.</p>
     {error && <p className="form-error" role="alert">{error}</p>}
@@ -177,7 +177,7 @@ export function EpisodeDecision({ candidate, plan, policy, models, interval, fin
   const shieldVerdict = score == null ? null : score >= threshold ? 'Yes · Passed' : 'No · Below threshold'
   const reviewVerdict = REVIEW_DECISIONS[candidate.review_decision]
   const originalShieldVerdict = score == null ? null : score >= reviewThreshold ? 'Yes' : 'No'
-  const pending = status === 'unreviewed' ? 'Review limit reached' : finished ? 'No verdict recorded' : 'Awaiting verdict'
+  const pending = status === 'unreviewed' ? 'Skipped' : finished ? 'No verdict recorded' : 'Awaiting verdict'
 
   return <article className="candidate" data-outcome={status} aria-label={`Episode ${id.replace('alert-', '')}`}>
     <header className="candidate-heading">
@@ -206,7 +206,7 @@ export function EpisodeDecision({ candidate, plan, policy, models, interval, fin
         {shieldVerdict && <p>Checked the peak, duration, and baseline for a meaningful deviation.</p>}
       </li>
       <li>
-        <h5>Large 4 triage review</h5>
+        <h5>Triage review</h5>
         <ModelId model={(reviewVerdict || status === 'verified') && models?.review} />
         <p className="decision-verdict">{reviewVerdict ?? (status === 'shield_below_threshold' ? 'Skipped by Shieldstral' : pending)}</p>
         {explanation && <p>{explanation}</p>}
@@ -218,7 +218,7 @@ export function EpisodeDecision({ candidate, plan, policy, models, interval, fin
         </>}
         {nextCheck && <p><strong>Next check</strong> {nextCheck}</p>}
         {reviewVerdict && candidate.review_decision !== 'unavailable' && reviewThreshold !== threshold &&
-          <p className="field-note">Large 4 saw Shieldstral’s original {originalShieldVerdict} verdict at {reviewThreshold}.</p>}
+          <p className="field-note">The reviewer saw Shieldstral’s {originalShieldVerdict} verdict at {reviewThreshold}.</p>}
       </li>
     </ol>
   </article>

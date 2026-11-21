@@ -1,6 +1,9 @@
 """Regression tests for the incident briefing and private voice context."""
 
 import base64
+import time
+import wave
+from io import BytesIO
 
 import httpx
 import pytest
@@ -17,6 +20,7 @@ RUN_KEY_HEADER = 'X-Safestral-Run-Key'
 
 class Models:
     large_model = 'mistral-large-4-0'
+    review_model = 'mistral-small-2603'
     shield_model = 'test-shield'
     timestral_model = 'test-timestral'
 
@@ -29,6 +33,14 @@ class Models:
                     'monitoring': 'Collect latency measurements.'}
         self.prompts.append(evidence)
         return {'answer': 'Here is what the supplied evidence shows.'}
+
+
+def wav_audio(seconds: int) -> bytes:
+    buffer = BytesIO()
+    with wave.open(buffer, 'wb') as recording:
+        recording.setparams((1, 2, 24000, 0, 'NONE', 'not compressed'))
+        recording.writeframes(b'\x00\x00' * (24000 * seconds))
+    return buffer.getvalue()
 
 
 @pytest.fixture
@@ -47,7 +59,8 @@ def website(monkeypatch):
         request = httpx.Request('POST', url)
         if url.endswith('/transcriptions'):
             return httpx.Response(200, request=request, json={'text': ' What happened on July 11? '})
-        return httpx.Response(200, request=request, json={'audio_data': base64.b64encode(b'mp3 bytes').decode()})
+        audio = wav_audio(10) if options['json']['response_format'] == 'wav' else b'mp3 bytes'
+        return httpx.Response(200, request=request, json={'audio_data': base64.b64encode(audio).decode()})
 
     monkeypatch.setattr(voice.httpx, 'post', audio_request)
     with TestClient(colab_app.build_app()) as client:
@@ -61,10 +74,12 @@ def test_public_briefing_and_recorded_question(website):
     assert client.post(f'{PATH}/briefing', json={}, headers={'Origin': 'https://other.example'}).status_code == 403
     briefing = client.post(f'{PATH}/briefing', json={})
     assert briefing.status_code == 200
-    assert '17,613' in briefing.json()['briefing']
-    assert '7,677' in briefing.json()['briefing']
+    assert briefing.json()['briefing'] == (
+        'Hi, this is Safestral. Hugging Face’s daily recovered actions peaked on July 11. Any questions?'
+    )
     assert briefing.json()['source_url'].startswith('https://huggingface.co/')
-    assert base64.b64decode(briefing.json()['audio']) == b'mp3 bytes'
+    assert briefing.json()['audio_type'] == 'audio/wav'
+    assert base64.b64decode(briefing.json()['audio']) == wav_audio(10)
     assert calls[0]['json']['model'] == voice.SPEECH_MODEL
 
     result = client.post(f'{PATH}/questions', files={'audio': ('question.webm', b'recording', 'audio/webm')},
@@ -77,6 +92,19 @@ def test_public_briefing_and_recorded_question(website):
     assert prompt['prior_turns'][0]['question'] == 'What incident?'
     assert {'date': '2026-07-11', 'actions': 7677} in prompt['incident_evidence']['published_activity']
     assert calls[2]['json']['input'] == result.json()['answer']
+    assert calls[2]['json']['response_format'] == 'mp3'
+
+
+def test_overlong_briefing_keeps_text_and_omits_audio(website, monkeypatch):
+    client, _, _ = website
+    client.auth = LOGIN
+    monkeypatch.setattr(voice.VoxtralAudio, 'request', lambda *_args, **_kwargs: {
+        'audio_data': base64.b64encode(wav_audio(11)).decode(),
+    })
+    result = client.post(f'{PATH}/briefing', json={})
+    assert result.status_code == 200
+    assert 'briefing' in result.json() and 'audio_warning' in result.json()
+    assert 'audio' not in result.json()
 
 
 def test_uploaded_voice_context_requires_the_run_key_and_keeps_excerpts_private(website):
@@ -93,8 +121,6 @@ def test_uploaded_voice_context_requires_the_run_key_and_keeps_excerpts_private(
     assert client.post(f'{PATH}/questions', data={'run_id': run['id'], 'question': 'What happened?'},
                        headers={RUN_KEY_HEADER: 'wrong'}).status_code == 404
     assert not calls
-
-    import time
 
     for _ in range(100):
         view = client.get(run_path, headers=headers).json()

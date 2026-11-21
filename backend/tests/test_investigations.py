@@ -16,6 +16,7 @@ from fastapi.testclient import TestClient
 import colab_app
 from sentinel_loop.serve.investigation import InvestigationRuns, investigate
 from sentinel_loop.serve.investigation_models import InvestigationError, InvestigationModels
+from sentinel_loop.serve.voice import brief_incident
 
 LOGIN = ('safestral', 'integration-only-' + 'x' * 32)
 PATH = '/sentinel/investigations'
@@ -35,6 +36,7 @@ def archive(high, *, step=timedelta(minutes=1)):
 
 class Models:
     large_model = 'test-large'
+    review_model = 'test-small'
     timestral_model = 'test-timestral'
     shield_model = 'test-shield'
 
@@ -42,17 +44,17 @@ class Models:
         self.concurrent_plans = Barrier(concurrent)
 
     def large_json(self, _instructions, evidence, *, constrain_json=True):
-        if 'measured_series' in evidence:
-            assert constrain_json
-            self.concurrent_plans.wait(timeout=5)
-            if not evidence['measured_series']:
-                return {'metric_id': None, 'summary': 'Monitor latency', 'reason': 'The report describes slow requests.',
-                        'monitoring': 'Collect timestamped latency observations.'}
-            measured = evidence['measured_series'][0]
-            return {'metric_id': measured['id'], 'summary': 'Measured latency', 'reason': 'Latency is present',
-                    'monitoring': f"Review departures from the forecast. Peak {measured['max']}",
-                    'direction': 'above', 'persistence': 2}
-        assert not constrain_json
+        assert constrain_json
+        self.concurrent_plans.wait(timeout=5)
+        if not evidence['measured_series']:
+            return {'metric_id': None, 'summary': 'Monitor latency', 'reason': 'The report describes slow requests.',
+                    'monitoring': 'Collect timestamped latency observations.'}
+        measured = evidence['measured_series'][0]
+        return {'metric_id': measured['id'], 'summary': 'Measured latency', 'reason': 'Latency is present',
+                'monitoring': f"Review departures from the forecast. Peak {measured['max']}",
+                'direction': 'above', 'persistence': 2}
+
+    def review_json(self, _instructions, evidence):
         return {'findings': [{'id': item['id'], 'decision': 'triage', 'explanation': 'Four elevated observations.',
                               'hypotheses': ['Upstream slowdown', 'Gateway queue contention'],
                               'next_check': 'Check the gateway request timings.'}
@@ -60,6 +62,9 @@ class Models:
 
     def shield(self, _instruction, _question, _evidence):
         return .9
+
+    def shield_many(self, instruction, question, evidence_batch):
+        return [self.shield(instruction, question, evidence) for evidence in evidence_batch]
 
     def forecast(self, contexts):
         return np.tile([9, 10, 11], (len(contexts), 1))
@@ -80,7 +85,8 @@ def test_same_name_uploads_remain_private_and_use_each_archives_measurements(tmp
     monkeypatch.setenv('SENTINEL_DATA_DIR', str(tmp_path))
     monkeypatch.setenv('SENTINEL_WEB_USERNAME', LOGIN[0])
     monkeypatch.setenv('SENTINEL_WEB_PASSWORD', LOGIN[1])
-    monkeypatch.setattr(colab_app, 'investigation_runs', lambda _api_key: InvestigationRuns(Models()))
+    runs = InvestigationRuns(Models())
+    monkeypatch.setattr(colab_app, 'investigation_runs', lambda _api_key: runs)
     app = colab_app.build_app()
 
     with TestClient(app) as first:
@@ -106,6 +112,8 @@ def test_same_name_uploads_remain_private_and_use_each_archives_measurements(tmp
 
         for report, expected, sha in zip(reports, (91, 167), (sha_a, sha_b)):
             assert report['status'] == 'complete', report
+            assert report['models']['investigate'] == 'test-large'
+            assert report['models']['review'] == 'test-small'
             assert report['filename'] == 'same.zip'
             assert report['result']['source']['sha256'] == sha
             assert report['result']['metrics'] == [report['result']['metric']]
@@ -116,6 +124,9 @@ def test_same_name_uploads_remain_private_and_use_each_archives_measurements(tmp
             assert report['result']['candidates'][0]['peak']['observed'] == expected
             assert report['result']['candidates'][0]['status'] == 'supported'
 
+        assert brief_incident(runs.voice_context(a['id'], a['key'])) == (
+            'Hi, this is Safestral. Latency alert at 00:27 UTC on January 1.'
+        )
         assert first.get(f"{PATH}/{b['id']}").status_code == 404
         assert second.get(f"{PATH}/{a['id']}", headers={'X-Safestral-Run-Key': b['key']}).status_code == 404
         assert not list(tmp_path.iterdir())
@@ -147,13 +158,22 @@ def test_mistral_stream_uses_only_final_answer_chunks(monkeypatch):
         'data: [DONE]',
     ]
 
+    payloads = []
+
     def stream(method, _url, **kwargs):
         assert method == 'POST'
         assert kwargs['json']['stream'] is True
+        payloads.append(kwargs['json'])
         return nullcontext(SimpleNamespace(is_success=True, iter_lines=lambda: iter(lines)))
 
     monkeypatch.setattr('sentinel_loop.serve.investigation_models.httpx.stream', stream)
-    assert InvestigationModels('test-key', '5M').large_json('Return JSON.', {'question': 'Answer?'}) == {'answer': 42}
+    models = InvestigationModels('test-key', '5M')
+    assert models.large_json('Return JSON.', {'question': 'Answer?'}) == {'answer': 42}
+    assert models.review_json('Return JSON.', {'question': 'Answer?'}) == {'answer': 42}
+    assert [(payload['model'], payload['reasoning_effort']) for payload in payloads] == [
+        ('mistral-large-4-0', 'low'), ('mistral-small-2603', 'none'),
+    ]
+    assert payloads[1]['response_format'] == {'type': 'json_object'}
 
 
 def test_replay_preserves_subsecond_csv_intervals(tmp_path, monkeypatch):
@@ -217,13 +237,12 @@ def test_report_can_be_replayed_with_separate_measurements(tmp_path, monkeypatch
 
 def test_reviewer_only_receives_episodes_at_or_above_the_default_threshold():
     class DisagreeingModels(Models):
-        def large_json(self, instructions, evidence, *, constrain_json=True):
-            result = super().large_json(instructions, evidence, constrain_json=constrain_json)
-            if 'findings' in result:
-                assert evidence['shield_threshold'] == .1
-                assert [candidate['id'] for candidate in evidence['candidates']] == ['alert-2', 'alert-3']
-                assert evidence['operator_question'] == 'Monitor latency'
-                next(finding for finding in result['findings'] if finding['id'] == 'alert-2')['decision'] = 'dismiss'
+        def review_json(self, instructions, evidence):
+            assert evidence['shield_threshold'] == .1
+            assert [candidate['id'] for candidate in evidence['candidates']] == ['alert-2', 'alert-3']
+            assert evidence['operator_question'] == 'Monitor latency'
+            result = super().review_json(instructions, evidence)
+            result['findings'][0]['decision'] = 'dismiss'
             return result
 
         def shield(self, _instruction, _question, evidence):
@@ -266,10 +285,9 @@ def test_candidate_threshold_can_be_reapplied_to_a_private_run(tmp_path, monkeyp
             super().__init__(concurrent=1)
             self.review_calls = []
 
-        def large_json(self, instructions, evidence, *, constrain_json=True):
-            if 'candidates' in evidence:
-                self.review_calls.append(evidence)
-            return super().large_json(instructions, evidence, constrain_json=constrain_json)
+        def review_json(self, instructions, evidence):
+            self.review_calls.append(evidence)
+            return super().review_json(instructions, evidence)
 
         def shield(self, _instruction, _question, _evidence):
             return .28
@@ -362,12 +380,10 @@ def test_public_timeline_uses_only_published_daily_counts(tmp_path, monkeypatch)
         assert 'trace' not in result
 
 
-def test_unavailable_large_review_keeps_candidate_and_followup():
+def test_unavailable_review_keeps_candidate_and_followup():
     class UnavailableModels(Models):
-        def large_json(self, instructions, evidence, *, constrain_json=True):
-            if 'candidates' in evidence:
-                raise InvestigationError('Model returned no usable review.')
-            return super().large_json(instructions, evidence, constrain_json=constrain_json)
+        def review_json(self, _instructions, _evidence):
+            raise InvestigationError('Model returned no usable review.')
 
     result = {}
     stages = {}
@@ -383,3 +399,44 @@ def test_unavailable_large_review_keeps_candidate_and_followup():
     assert candidate['review_decision'] == 'unavailable'
     assert candidate['peak']['observed'] == 91
     assert candidate['explanation'] and candidate['next_check']
+
+
+def test_all_episodes_are_screened_and_review_batches_fail_independently():
+    class BatchModels(Models):
+        def __init__(self):
+            super().__init__(concurrent=1)
+            self.shield_batches = []
+            self.review_batches = []
+
+        def shield_many(self, _instruction, _question, evidence_batch):
+            ids = [item['candidate']['id'] for item in evidence_batch]
+            self.shield_batches.append(ids)
+            return [.08 if candidate_id == 'alert-1' else .1 for candidate_id in ids]
+
+        def review_json(self, instructions, evidence):
+            ids = [item['id'] for item in evidence['candidates']]
+            self.review_batches.append(ids)
+            if 'alert-2' in ids:
+                raise InvestigationError('The first review batch failed.')
+            return super().review_json(instructions, evidence)
+
+    rows = ['timestamp,latency']
+    elevated = {index + offset for index in range(50, 86, 4) for offset in (0, 1)}
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    for index in range(100):
+        rows.append(f'{(start + timedelta(minutes=index)).isoformat()},{91 if index in elevated else 10}')
+    models = BatchModels()
+    result, stages = {}, {}
+
+    def report(stage, status, _detail, **data):
+        result.update(data)
+        stages[stage] = status
+
+    investigate('\n'.join(rows).encode(), 'Monitor latency', models, report, filename='latency.csv')
+    ids = [f'alert-{number}' for number in range(1, 10)]
+    assert models.shield_batches == [ids[:4], ids[4:8], ids[8:]]
+    assert models.review_batches == [ids[1:7], ids[7:]]
+    assert [item['status'] for item in result['candidates']] == (
+        ['shield_below_threshold'] + ['needs_review'] * 6 + ['supported'] * 2
+    )
+    assert stages['review'] == 'done'

@@ -32,6 +32,7 @@ function VoiceConversation({ run }) {
   const [hasAudio, setHasAudio] = useState(false)
   const [speaking, setSpeaking] = useState(false)
   const player = useRef(null)
+  const transcript = useRef(null)
   const active = useRef({})
   const headers = run ? { 'X-Safestral-Run-Key': run.key } : {}
   const ready = phase === 'ready'
@@ -55,6 +56,11 @@ function VoiceConversation({ run }) {
     }
   }, [])
 
+  useEffect(() => {
+    const log = transcript.current
+    if (log) log.scrollTop = log.scrollHeight
+  }, [turns])
+
   function playAudio(data) {
     const resources = active.current
     const element = player.current
@@ -67,7 +73,7 @@ function VoiceConversation({ run }) {
     setAudioNote(data.audio_warning || '')
     if (!data.audio) return
     const bytes = Uint8Array.from(atob(data.audio), character => character.charCodeAt(0))
-    const url = URL.createObjectURL(new Blob([bytes], { type: 'audio/mpeg' }))
+    const url = URL.createObjectURL(new Blob([bytes], { type: data.audio_type || 'audio/mpeg' }))
     resources.audioUrl = url
     element.src = url
     setHasAudio(true)
@@ -211,7 +217,8 @@ function VoiceConversation({ run }) {
       <p className="voice-status" role="status">{STATUS[phase] || (speaking ? 'Playing audio…' : '')}</p>
       {briefing && (
         <>
-          <div className="voice-transcript" role="log" aria-label="Incident conversation" aria-relevant="additions">
+          <div ref={transcript} className="voice-transcript" role="log" tabIndex={0}
+            aria-label="Incident conversation" aria-relevant="additions">
             <div className="voice-message">
               <strong>Safestral</strong>
               <p>{briefing}</p>

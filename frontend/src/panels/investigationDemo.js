@@ -61,7 +61,7 @@ export const investigationStages = [
   ['calibrate', 'Check the baseline', 'Shieldstral'],
   ['detect', 'Forecast and detect', 'Timestral'],
   ['verify', 'Verify candidates', 'Shieldstral'],
-  ['review', 'Investigate verified episodes', 'Le Chonk'],
+  ['review', 'Investigate verified episodes', 'Mistral Small 4'],
 ]
 
 const details = [
@@ -84,7 +84,7 @@ export function sampleInvestigation(step, threshold = DEFAULT_SHIELD_THRESHOLD) 
     result.metric = sampleMetric
     result.policy = {
       shield_threshold: threshold, review_shield_threshold: DEFAULT_SHIELD_THRESHOLD,
-      baseline_shield_threshold: BASELINE_SHIELD_THRESHOLD, review_limit: 6, max_missing_intervals: 2,
+      baseline_shield_threshold: BASELINE_SHIELD_THRESHOLD, max_missing_intervals: 2,
     }
     result.plan = {
       summary: 'Monitor gateway response time to spot slow requests.',
@@ -127,8 +127,8 @@ export function sampleInvestigation(step, threshold = DEFAULT_SHIELD_THRESHOLD) 
   if (step >= investigationStages.length) {
     const reviewed = result.candidates.filter(candidate => candidate.review_decision).length
     stages.review = reviewed
-      ? { status: 'done', detail: `Large 4 investigated ${reviewed} episodes that passed Shieldstral.` }
-      : { status: 'skipped', detail: 'No candidates passed Shieldstral for Large 4 review.' }
+      ? { status: 'done', detail: `Mistral Small 4 investigated ${reviewed} episodes that passed Shieldstral.` }
+      : { status: 'skipped', detail: 'No candidates passed Shieldstral for review.' }
   }
   return { status: step < investigationStages.length ? 'running' : 'complete', stages, result, filename: 'Gateway slowdown' }
 }
