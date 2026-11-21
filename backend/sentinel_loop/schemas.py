@@ -139,6 +139,31 @@ class AlertEvent(BaseModel):
     created_at: datetime = Field(default_factory=utcnow)
 
 
+class ForecastPoint(BaseModel):
+    """One step of a multi-step forecast for a metric stream."""
+
+    step: int  # 1-based horizon step
+    predicted: float
+    lower: float
+    upper: float
+    ts: Optional[datetime] = None  # expected timestamp of this step, if known
+
+
+class IssueForecast(BaseModel):
+    """First forecast step expected to breach the current normal band = the
+    predicted issue, with lead time."""
+
+    metric: str
+    strategy: str = ""
+    steps_ahead: int
+    expected_in_minutes: float
+    expected_breach_ts: Optional[datetime] = None
+    predicted_value: float
+    lower: float
+    upper: float
+    model_confidence: float = Field(ge=0.0, le=1.0)
+
+
 class ClassMetrics(BaseModel):
     precision: float
     recall: float

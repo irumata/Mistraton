@@ -16,7 +16,7 @@ from typing import Optional
 import numpy as np
 
 from ..config import MetricsConfig
-from ..schemas import DetectionEvent, WindowSample, WindowState
+from ..schemas import DetectionEvent, ForecastPoint, IssueForecast, WindowSample, WindowState
 from ..timestral import LocalTimestralBackend, window_features
 
 STRATEGIES = ("forecasting", "embedding", "zero-shot")
@@ -54,6 +54,33 @@ class BaseDetector:
                history_windows: list[list[Optional[float]]], window_start=None, window_end=None,
                ) -> Optional[DetectionEvent]:
         raise NotImplementedError
+
+    def forecast(self, metric: str, values: list[Optional[float]], steps: int,
+                 step_seconds: int, last_ts=None) -> tuple[list[ForecastPoint], Optional[IssueForecast]]:
+        """Multi-step forecast of `metric` from the observed `values`.
+
+        Returns the per-step forecast points and, if any predicted step leaves
+        the current normal band (predict_band on the observed history), the
+        first such step as an IssueForecast with its lead time.
+        """
+        hist = list(values)
+        _, band_lo, band_hi = self.backend.predict_band(metric, hist)
+        raw = self.backend.forecast_horizon(metric, hist, max(1, steps))
+        points: list[ForecastPoint] = []
+        issue: Optional[IssueForecast] = None
+        for h, (pred, lo, hi) in enumerate(raw, start=1):
+            ts = (last_ts + timedelta(seconds=h * step_seconds)) if last_ts is not None else None
+            points.append(ForecastPoint(step=h, predicted=pred, lower=lo, upper=hi, ts=ts))
+            if issue is None and (pred < band_lo or pred > band_hi):
+                residual = (band_lo - pred) if pred < band_lo else (pred - band_hi)
+                scale = max((band_hi - band_lo) / 2.0, 1e-9)
+                issue = IssueForecast(
+                    metric=metric, strategy=self.name, steps_ahead=h,
+                    expected_in_minutes=h * step_seconds / 60.0,
+                    expected_breach_ts=ts, predicted_value=pred, lower=lo, upper=hi,
+                    model_confidence=self._confidence(residual, scale),
+                )
+        return points, issue
 
     def quantile_loss(self, samples: list[WindowSample]) -> float:
         return 0.0

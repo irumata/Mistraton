@@ -24,6 +24,7 @@ from .schemas import MetricPoint, WindowSample
 class TimestralBackend(Protocol):
     def fit_forecast(self, series: dict[str, list[MetricPoint]], normal: dict[str, list[bool]]) -> None: ...
     def predict_band(self, metric: str, history: list[Optional[float]]) -> tuple[float, float, float]: ...
+    def forecast_horizon(self, metric: str, history: list[Optional[float]], steps: int) -> list[tuple[float, float, float]]: ...
     def embed_window(self, values: list[Optional[float]]) -> list[float]: ...
     def residual_score(self, metric: str, values: list[Optional[float]]) -> float: ...
 
@@ -109,6 +110,40 @@ class LocalTimestralBackend:
             return pred, pred - self.band_k * zs["sigma"], pred + self.band_k * zs["sigma"]
         half = max(self.band_k * stats["sigma"], stats["q95"] - stats["q05"])
         return pred, pred - half, pred + half
+
+    def forecast_horizon(self, metric: str, history: list[Optional[float]], steps: int) -> list[tuple[float, float, float]]:
+        """Multi-step-ahead forecast: per step h in 1..steps a (predicted, lower, upper).
+
+        Prediction = trailing-window mean + trailing slope * h; the band
+        half-width max(band_k * sigma, q95 - q05) widens with sqrt(h). Residual
+        stats come from the fitted forecast, falling back to zero-shot stats,
+        then to the history itself.
+        """
+        hist = _clean(history)
+        stats = self.forecast.get(metric) or self.zeroshot.get(metric)
+        tail = hist[-self.horizon:] if hist.size >= self.horizon else hist
+        if tail.size:
+            base = float(tail.mean())
+            slope = float(np.polyfit(np.arange(tail.size, dtype=float), tail, 1)[0]) if tail.size > 1 else 0.0
+            sigma = float(tail.std()) or 1e-6
+            q05 = float(np.quantile(tail, 0.05))
+            q95 = float(np.quantile(tail, 0.95))
+        else:
+            base = (stats or {}).get("mean", 0.0)
+            slope = 0.0
+            sigma = 1e-6
+            q05, q95 = base - sigma, base + sigma
+        if stats is not None:
+            sigma = float(stats.get("sigma", sigma))
+            q05 = float(stats.get("q05", q05))
+            q95 = float(stats.get("q95", q95))
+        half0 = max(self.band_k * sigma, q95 - q05, 1e-9)
+        out: list[tuple[float, float, float]] = []
+        for h in range(1, max(1, steps) + 1):
+            pred = base + slope * h
+            half = half0 * (h ** 0.5)
+            out.append((pred, pred - half, pred + half))
+        return out
 
     def embed_window(self, values: list[Optional[float]]) -> list[float]:
         return window_features(values)

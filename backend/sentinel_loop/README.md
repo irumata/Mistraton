@@ -74,11 +74,14 @@ python -m sentinel_loop evaluate --data-dir data --strategy forecasting
 # 7. serve (self-hosted) and shadow-run
 python -m sentinel_loop serve       --data-dir data --port 8001
 python -m sentinel_loop shadow-run  --data-dir data --strategy forecasting
+
+# 8. issue forecasting: multi-step forecast + first expected band breach (lead time)
+python -m sentinel_loop forecast    --data-dir data --strategy forecasting --steps 12
 ```
 
 The watcher is also mounted into the live website app under `/sentinel/*`
-(`POST /sentinel/watch`, `POST /sentinel/feedback`, `GET /sentinel/alerts`,
-`GET /sentinel/health`).
+(`POST /sentinel/watch`, `POST /sentinel/forecast`, `POST /sentinel/feedback`,
+`GET /sentinel/alerts`, `GET /sentinel/health`).
 
 ```bash
 # watch a live stream (shadow mode first: alerts logged, not sent)
@@ -86,7 +89,17 @@ curl -X POST localhost:8001/sentinel/watch -H 'content-type: application/json' -
   "shadow": true,
   "streams": {"api_latency_ms": [{"ts": "2026-01-10T03:00:00Z", "value": 95.0}]}
 }'
+
+# forecast the next steps and the first step expected to breach the normal band
+curl -X POST localhost:8001/sentinel/forecast -H 'content-type: application/json' -d '{
+  "steps": 12,
+  "streams": {"api_latency_ms": [{"ts": "2026-01-10T03:00:00Z", "value": 95.0}]}
+}'
 ```
+
+`POST /sentinel/forecast` returns `{strategy, steps, forecasts: {metric: [ForecastPoint]},
+issues: [IssueForecast]}`; an `IssueForecast` is the first forecast step whose predicted
+value leaves the current normal band, with `expected_in_minutes` lead time.
 
 ## Tests
 
