@@ -106,6 +106,33 @@ curl -X POST localhost:8001/sentinel/forecast -H 'content-type: application/json
 issues: [IssueForecast]}`; an `IssueForecast` is the first forecast step whose predicted
 value leaves the current normal band, with `expected_in_minutes` lead time.
 
+## Using the collected dataset (`work/`)
+
+A ready-made dataset ships in `work/` (tracked via PR #4; see `work/README.md`
+for sources, licenses and caveats): 14 incident bundles under `work/raw/`
+(11 high-severity 2026 AI incidents from the AI Incident Database — the MIT AI
+Incident Tracker's source data — plus Hugging Face nginx-log and agent-failure
+samples and the HF July 2026 security-incident postmortem), with synthesized
+per-incident metric CSVs, plus `records.jsonl` and `metrics.yaml`.
+
+From `backend/`:
+
+```bash
+export SENTINEL_DATA_DIR=../work
+python -m sentinel_loop ingest
+python -m sentinel_loop label-windows     # offline: regex PII fallback; Shieldstral validation needs MISTRAL_API_KEY
+python -m sentinel_loop build-dataset
+python -m sentinel_loop train-detection   # also: train-embedding-head, train-zero-shot
+python -m sentinel_loop evaluate --strategy embedding
+python -m sentinel_loop forecast --strategy forecasting --steps 12
+python -m sentinel_loop serve --port 8001 # POST /sentinel/watch, POST /sentinel/forecast, ...
+```
+
+Only `extract-metrics` strictly needs `MISTRAL_API_KEY` (set it in your own
+environment; never commit it); the monitoring contract is already in
+`work/metrics.yaml`. Derived artifacts (`labels.db`, `dataset/`, `artifacts/`)
+are not committed — the commands above regenerate them.
+
 ## Tests
 
 ```bash
