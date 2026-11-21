@@ -151,7 +151,25 @@ python -m sentinel_loop ingest | extract-metrics | label-windows | build-dataset
   (`test_e2e_synthetic.py`, `examples/synthetic.py`: 2 metrics + incidents incl. a
   deploy-related hard negative).
 
-## 8. File map
+## 8. Web interface (pixelated Mistral style)
+
+`frontend/` (React + Vite) is the operator console, served next to the API and talking
+to the `/sentinel/*` endpoints mounted by `backend/colab_app.py`:
+
+- Whole UI is styled in **Mistral AI pixel style**: `Press Start 2P` pixel font, crisp
+  square brand assets (`frontend/src/components/pixel.jsx` — the yellow→red pixel "M"
+  logo and pixel shields), hard 3px borders, offset block shadows, pixel-grid paper
+  background, yellow/orange/red brand palette (`frontend/src/App.css`), pixel favicon.
+- The **SAFETRAL** badge (header + every alert) is the visible face of the **Shieldstral
+  guard layer**: green shield = verified, red = rejected/suppressed, gray = shadow mode.
+- The **Watch** tab renders the live detection chain per window as pixel stage chips
+  `1·TIMESTRAL → 2·SAFETRAL → 3·LARGE` with pass/fail marks and an outcome badge
+  (`▶ fired` / `✕ suppressed` / `· clear`), a summary strip
+  (`events / alerts fired / suppressed / mode`), and each fired alert's **printed
+  Mistral Large explanation** in a scanlined pixel console. Stored alerts keep
+  confirm/reject feedback buttons.
+
+## 9. File map
 
 ```
 backend/sentinel_loop/
