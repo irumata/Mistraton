@@ -1,0 +1,23 @@
+# Sentinel-Loop: watcher + labeling store.
+# The labeling store defaults to SQLite (mounted volume); set SENTINEL_DB to a
+# Postgres DSN in production. Timestral serving runs self-hosted inside the
+# watcher (small enough for CPU / minimal GPU).
+services:
+  watcher:
+    image: python:3.13-slim
+    working_dir: /app
+    command: >
+      sh -c "pip install --no-cache-dir -r sentinel_loop/requirements.txt &&
+             uvicorn sentinel_loop.serve.watcher:app --host 0.0.0.0 --port 8001"
+    ports:
+      - "8001:8001"
+    environment:
+      - MISTRAL_API_KEY=${MISTRAL_API_KEY:-}
+      - SENTINEL_DATA_DIR=/data
+      - SENTINEL_DB=/data/labels.db
+    volumes:
+      - .:/app
+      - sentinel-data:/data
+
+volumes:
+  sentinel-data:

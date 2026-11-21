@@ -33,3 +33,12 @@ def database_health():
     except psycopg.Error:
         logger.warning("Database readiness check failed")
         raise HTTPException(status_code=503, detail="Database unavailable") from None
+
+
+# --- Sentinel-Loop: Timestral incident detection (self-hosted /sentinel/*) ---
+try:
+    from sentinel_loop.serve.watcher import create_sentinel_router
+
+    app.include_router(create_sentinel_router(), prefix="/sentinel", tags=["sentinel-loop"])
+except Exception:  # noqa: BLE001 - the website must stay up even if sentinel deps break
+    logger.warning("Sentinel-Loop router not mounted", exc_info=True)

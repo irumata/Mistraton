@@ -1,0 +1,6 @@
+# Shieldstral alert-verification policy (versioned). Before an alert fires,
+# Shieldstral re-checks the accompanying evidence against this policy.
+version: "1"
+pair_question: "Does this evidence support firing an alert for this metric window?"
+min_confidence: 0.7
+require_corroboration: true

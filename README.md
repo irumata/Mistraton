@@ -319,6 +319,17 @@ sudo docker compose --profile jobs rm -f worker redis
 - **DB 503:** inspect db/migrate logs, original credentials and schema. An older volume containing the previous guide's `app` DB/superuser is not silently compatible with this project's schema. Preserve/backup data before migrating an old installation.
 - **OOM:** keep jobs off, one API worker, builds on GitHub; inspect kernel logs and increase VM memory or reduce load. Swap is slower than RAM.
 
+## Sentinel-Loop: Timestral incident detection (live in `backend/`)
+
+`backend/sentinel_loop/` implements the system from `system_create_prompt.md`:
+Mistral Large extracts metrics from raw incident data, Shieldstral labels/verifies/guards
+(PII filtering, window labels, alert verification), and a small self-hosted **Timestral**
+(5M default) is the only detector and the only tuned model. Pipeline:
+`ingest -> extract-metrics -> label-windows -> build-dataset -> train-detection -> evaluate -> serve`,
+with a feedback loop into the labeling store. The watcher is mounted into the live API at
+`/sentinel/watch` (see `backend/sentinel_loop/README.md` for the full walkthrough, CLI
+entry points, tests, and `docker-compose.yml` for the watcher + labeling store).
+
 ## Official references checked
 
 - [Docker Engine on Oracle Linux](https://docs.docker.com/engine/install/oraclelinux/) — repository/packages/GPG key.

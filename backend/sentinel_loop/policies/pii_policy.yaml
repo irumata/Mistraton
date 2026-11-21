@@ -1,0 +1,7 @@
+# Shieldstral PII policy (versioned). All text entering the labeling/training
+# stores passes this filter first (regex fallback in labeling/pii.py).
+version: "1"
+rules:
+  - "Strip email addresses, phone numbers, IPs, card numbers, API tokens."
+  - "Strip personal names when paired with contact details."
+  - "Never store credentials or secrets."

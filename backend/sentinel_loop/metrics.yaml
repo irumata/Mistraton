@@ -1,0 +1,44 @@
+# Sentinel-Loop monitoring contract + thresholds (versioned config, never hardcoded).
+# This packaged file is the outline/default. `extract-metrics` writes the merged,
+# data-derived contract to <data-dir>/metrics.yaml, which later stages prefer.
+version: 1
+
+window:
+  length_seconds: 300        # sliding window length
+  step_seconds: 60           # sliding step
+  degraded_minutes: 30       # post-incident unstable period labeled `degraded`
+  default_lead_time_minutes: 20
+
+# metric definitions are derived from the actual exports by Mistral Large
+# (extract-metrics stage); the entries below are the outline shape.
+metrics:
+  - name: api_latency_ms
+    source: prometheus:api_gateway
+    sampling_seconds: 60
+    aggregation: 1m_avg
+    expected_normal_range: ["40", "120"]
+    observed_bad_range: ["800", "12000"]
+    lead_time_minutes: 18
+    why_relevant: "p99-style latency discriminates incident vs normal periods"
+  - name: error_rate
+    source: prometheus:api_gateway
+    sampling_seconds: 60
+    aggregation: 1m_avg
+    expected_normal_range: ["0", "0.005"]
+    observed_bad_range: ["0.05", "0.5"]
+    lead_time_minutes: 20
+    why_relevant: "error rate rises gradually before incident start (precursor)"
+
+thresholds:
+  band_k: 3.0                          # quantile-band multiplier on residual sigma
+  persistence_windows: 3               # sustained deviation before escalating to `incident`
+  alert_confidence: 0.7                # min confidence for a candidate alert
+  shadow_precision_threshold: 0.8      # precision on reviewed events to leave shadow mode
+  drift_precision_threshold: 0.6       # below this -> drift retraining trigger
+  min_reviews_for_drift: 5
+
+timestral:
+  size: "5M"        # start smallest: 5M | 37M | 72M | 209M; scale only on held-out eval
+  backend: local    # local self-hosted | forge | hf
+
+policies_dir: policies

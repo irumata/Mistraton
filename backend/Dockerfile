@@ -9,6 +9,7 @@ RUN pip install --no-cache-dir -r requirements.txt \
     && useradd --uid 10001 --create-home app
 
 COPY backend/main.py backend/migrate.py backend/jobs.py backend/schema.sql ./
+COPY backend/sentinel_loop ./sentinel_loop
 USER 10001:10001
 EXPOSE 8000
 

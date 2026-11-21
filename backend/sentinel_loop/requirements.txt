@@ -1,0 +1,8 @@
+# Sentinel-Loop runtime deps (all pinned to the versions verified in the dev venv).
+fastapi==0.135.1
+uvicorn==0.42.0
+pydantic==2.14.4
+pyyaml==6.0.4
+numpy==2.5.5
+httpx==0.28.1
+mistralai==3.8.0

@@ -1,0 +1,10 @@
+# Shieldstral labeling policy (versioned). Pair mode validates that a text
+# window and a metric window consistently describe the same incident onset.
+version: "1"
+pair_question: "Does this evidence describe the onset of the incident referenced by this window?"
+consistency_checks:
+  - "Timestamps in the text must be compatible with the window bounds."
+  - "The described symptoms must match the metric's observed_bad_range."
+quality_gates:
+  - "Metric definitions must reference series present in the source exports."
+  - "Summaries must not contain claims unsupported by the bundle."
