@@ -20,7 +20,7 @@ browser ──https──▶ https://<random>.trycloudflare.com ──▶ Colab 
               │  /sentinel/timestral/chat   fine-tuned checkpoint on the Colab GPU            │
               └───────────────────────────────────────────────────────────────────────────────┘
                                                               │
-              Drive: My Drive/Colab Notebooks/Mistralethon/  (data/, .env, repo copy)
+              Drive: My Drive/Colab Notebooks/Mistraton/  (data/, .env, repo copy)
 ```
 
 One origin → no CORS. The VM deployment (`backend/main.py` behind Caddy) is
@@ -31,11 +31,14 @@ unchanged; `colab_app.py` only **adds** routes on top of the shared
 
 1. Upload `notebooks/colab_website.ipynb` to Colab, Runtime → **GPU** (T4/A100) if
    you want `finetune-timestral`; CPU is fine otherwise.
-2. Run cells top to bottom. Cell 1 mounts Drive and loads
-   `My Drive/Colab Notebooks/Mistralethon/.env` (never commit it), sets
-   `SENTINEL_DATA_DIR`/`SENTINEL_ARTIFACTS_DIR` to Drive-persistent paths and copies
-   the repo to `/content/Mistraton` (Drive FS is too slow for pip/npm).
-3. Cell 3 builds the frontend (`npm run build` → `frontend/dist`).
+2. Run cells top to bottom. Cell 1 mounts Drive at `/content/drive/MyDrive`, loads
+   `My Drive/Colab Notebooks/Mistraton/.env` (never commit it), sets
+   `SENTINEL_DATA_DIR`/`SENTINEL_ARTIFACTS_DIR` to Drive-persistent paths, and adds
+   `…/Mistraton/backend` to `sys.path` — **no repo copy** (the Drive FS is slow per
+   file). Only the frontend skeleton (~36 files: `package.json`, `src/`, `public/`,
+   configs) is copied to `/content/frontend` because `npm install/build` needs local disk.
+3. Cell 2 pip-installs from absolute Drive paths; cell 3 builds the frontend
+   (`npm run build` → `/content/frontend/dist`).
 4. Cell 4 starts uvicorn on `0.0.0.0:8000` in a daemon thread.
 5. Cell 5 prints the public `https://….trycloudflare.com` URL — open it.
 
