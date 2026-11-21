@@ -1,5 +1,6 @@
 """CLI entry points: ingest, extract-metrics, label-windows, build-dataset,
-train-detection, train-embedding-head, evaluate, serve, shadow-run, finetune-timestral.
+train-detection, train-embedding-head, train-zero-shot, evaluate, forecast,
+serve, shadow-run, finetune-timestral.
 
 Run from the backend/ directory:  python -m sentinel_loop <command> [options]
 """
@@ -115,6 +116,19 @@ def cmd_train_zeroshot(args) -> int:
     return _train(args, "zero-shot")
 
 
+def cmd_forecast(args) -> int:
+    from .tuning.forecast import forecast_report
+    from .tuning.strategies import load_detector
+
+    data_dir = _data_dir(args)
+    config, _ = resolve_config(data_dir, args.config)
+    art = data_dir / "artifacts" / f"detector_{args.strategy}.json"
+    det = load_detector(art)
+    report = forecast_report(data_dir, config, det, steps=args.steps)
+    print(json.dumps(report, indent=2))
+    return 0
+
+
 def cmd_evaluate(args) -> int:
     from .tuning.evaluate import evaluate_strategy, save_evaluation
     from .tuning.strategies import load_detector
@@ -214,6 +228,12 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("train-zero-shot", help="zero-shot baseline (control, no tuning)")
     _add_common(p)
     p.set_defaults(func=cmd_train_zeroshot)
+
+    p = sub.add_parser("forecast", help="multi-step issue forecast from a trained detector")
+    _add_common(p)
+    p.add_argument("--strategy", default="forecasting", choices=["forecasting", "embedding", "zero-shot"])
+    p.add_argument("--steps", type=int, default=12, help="forecast horizon in sampling steps")
+    p.set_defaults(func=cmd_forecast)
 
     p = sub.add_parser("evaluate", help="evaluate a strategy on the held-out incident test set")
     _add_common(p)

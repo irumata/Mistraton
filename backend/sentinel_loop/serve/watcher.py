@@ -28,7 +28,7 @@ from ..config import (MetricsConfig, Settings, artifacts_dir_for, db_path_for,
 from ..feedback.loop import check_drift_and_trigger, record_review
 from ..labeling.store import LabelingStore
 from ..mistral_client import MistralClients
-from ..schemas import AlertEvent, ChainResult, DetectionEvent
+from ..schemas import AlertEvent, ChainResult, DetectionEvent, ForecastPoint, IssueForecast
 from ..tuning.strategies import BaseDetector, load_detector
 from .chain import DetectionChain
 
@@ -51,6 +51,18 @@ class WatchResponse(BaseModel):
     shadow: bool
     suppressed: int = 0  # candidates rejected by Shieldstral (false positives avoided)
     chains: list[ChainResult] = Field(default_factory=list)  # per-window chain trace
+
+
+class ForecastRequest(BaseModel):
+    streams: dict[str, list[StreamPoint]]
+    steps: int = Field(default=12, ge=1, le=10000)
+
+
+class ForecastResponse(BaseModel):
+    strategy: str
+    steps: int
+    forecasts: dict[str, list[ForecastPoint]]
+    issues: list[IssueForecast]
 
 
 class FeedbackRequest(BaseModel):
@@ -183,6 +195,30 @@ def create_sentinel_router(
                     alerts.append(res.alert)
         return WatchResponse(events=events, alerts=alerts, shadow=req.shadow,
                              suppressed=suppressed, chains=chains)
+
+    @router.post("/forecast", response_model=ForecastResponse)
+    def forecast(req: ForecastRequest):
+        det = get_detector()
+        cfg = get_config()
+        forecasts: dict[str, list[ForecastPoint]] = {}
+        issues: list[IssueForecast] = []
+        for metric, points in req.streams.items():
+            spec = cfg.metric(metric)
+            if spec is None:
+                continue
+            buf = state.points[metric]
+            for p in points:
+                buf.append((p.ts, p.value))
+            series = sorted(buf, key=lambda x: x[0])
+            if not series:
+                continue
+            values = [v for _, v in series]
+            pts, issue = det.forecast(metric, values, req.steps, spec.sampling_seconds,
+                                      last_ts=series[-1][0])
+            forecasts[metric] = pts
+            if issue is not None:
+                issues.append(issue)
+        return ForecastResponse(strategy=det.name, steps=req.steps, forecasts=forecasts, issues=issues)
 
     @router.post("/feedback")
     def feedback(req: FeedbackRequest):
