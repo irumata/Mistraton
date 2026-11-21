@@ -8,9 +8,37 @@ export default function UploadPanel() {
   const [result, setResult] = useState(null)
   const [error, setError] = useState('')
   const [overview, setOverview] = useState(null)
+  const [archives, setArchives] = useState([])
+  const [archiveBusy, setArchiveBusy] = useState(false)
+  const [archiveResult, setArchiveResult] = useState(null)
+  const [archiveFile, setArchiveFile] = useState(null)
 
   async function refresh() {
-    try { setOverview(await api('/sentinel/data')) } catch (e) { setError(e.message) }
+    try {
+      setOverview(await api('/sentinel/data'))
+      setArchives((await api('/sentinel/archive')).archives)
+    } catch (e) { setError(e.message) }
+  }
+
+  async function prepareArchive() {
+    setArchiveBusy(true); setError(''); setArchiveResult(null)
+    try {
+      setArchiveResult(await apiPost('/sentinel/archive/prepare', {}))
+      await refresh()
+    } catch (e) { setError(e.message) } finally { setArchiveBusy(false) }
+  }
+
+  async function uploadArchive() {
+    if (!archiveFile) return
+    setArchiveBusy(true); setError(''); setArchiveResult(null)
+    try {
+      const fd = new FormData()
+      fd.append('file', archiveFile)
+      fd.append('apply', 'true')
+      setArchiveResult(await uploadForm('/sentinel/archive/upload', fd))
+      setArchiveFile(null)
+      await refresh()
+    } catch (e) { setError(e.message) } finally { setArchiveBusy(false) }
   }
 
   async function onUpload() {
@@ -48,6 +76,32 @@ export default function UploadPanel() {
       {files.length > 0 && <p className="muted">{files.length} file(s): {files.map(f => f.name).join(', ')}</p>}
       {error && <p className="error">{error}</p>}
       {result && <pre>{JSON.stringify(result, null, 2)}</pre>}
+
+      <h3>Input data archive</h3>
+      <p className="muted">
+        Package the source <code>work/</code> folder into a downloadable zip (sha256 manifest), then apply it
+        here (or on the Colab host) to verify, extract into <code>raw/</code> and ingest — after which
+        <code> extract-metrics</code> (Mistral Large 4) can analyze it and write <code>metrics.yaml</code>.
+      </p>
+      <div className="row">
+        <button disabled={archiveBusy} onClick={prepareArchive}>{archiveBusy ? 'Zipping…' : 'Prepare archive from work/'}</button>
+        <input type="file" accept=".zip" onChange={e => setArchiveFile(e.target.files?.[0] || null)} />
+        <button disabled={archiveBusy || !archiveFile} onClick={uploadArchive}>Upload &amp; apply archive</button>
+        <button className="ghost" onClick={refresh}>Refresh</button>
+      </div>
+      {archives.length > 0 && (
+        <ul className="archive-list">
+          {archives.map(a => (
+            <li key={a.name}>
+              <a href={`/sentinel/archive/download?name=${encodeURIComponent(a.name)}`}>{a.name}</a>{' '}
+              <span className="muted">
+                {a.valid ? `${a.file_count} files · ${(a.bytes / 1024).toFixed(0)} KiB · ${a.created_at}` : 'invalid archive'}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {archiveResult && <pre>{JSON.stringify(archiveResult, null, 2)}</pre>}
       {overview && (
         <div>
           <h3>Data dir</h3>

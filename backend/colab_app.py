@@ -8,6 +8,11 @@ One FastAPI app, one port, serving everything the website needs:
                            (health, watch, feedback, alerts)
   /sentinel/upload         multipart upload of an incident bundle into
                            <data_dir>/raw/<incident_id>/ + optional ingest
+  /sentinel/archive/prepare   zip a source work dir (default repo work/) into
+                           <data_dir>/archive/*.zip with a sha256 manifest
+  /sentinel/archive           list archives in <data_dir>/archive/
+  /sentinel/archive/download  download one archive zip (?name=...)
+  /sentinel/archive/upload    upload an archive zip; verify + extract + ingest
   /sentinel/data           overview of the data dir (records, metrics,
                            artifacts, eval reports)
   /sentinel/eval           latest evaluation report for a strategy
@@ -62,6 +67,8 @@ DEFAULT_DIST = REPO_DIR / "frontend" / "dist"
 
 # Pipeline stages the website can trigger (CLI subcommands of sentinel_loop).
 STAGES = (
+    "prepare-archive",
+    "apply-archive",
     "ingest",
     "extract-metrics",
     "label-windows",
@@ -108,6 +115,10 @@ def _dist_dir() -> Optional[Path]:
 class PipelineRequest(BaseModel):
     strategy: str = "forecasting"
     args: list[str] = []  # extra CLI args, e.g. ["--epochs", "2"]
+
+
+class ArchivePrepareRequest(BaseModel):
+    src: Optional[str] = None  # source work dir; default: $SENTINEL_WORK_DIR or <repo>/work
 
 
 class ChatRequest(BaseModel):
@@ -211,6 +222,56 @@ def build_app() -> FastAPI:
             result["ingested"] = True
             result["records"] = len(records)
         return result
+
+    # --- input data archives: prepare / list / download / upload+apply ---
+    @app.post("/sentinel/archive/prepare")
+    def archive_prepare(req: ArchivePrepareRequest | None = None):
+        from sentinel_loop.archive import default_work_dir, make_archive
+
+        src = Path(req.src) if req and req.src else default_work_dir()
+        try:
+            manifest = make_archive(src, data_dir=_data_dir())
+        except (FileNotFoundError, ValueError) as exc:
+            raise HTTPException(400, str(exc)) from None
+        return manifest
+
+    @app.get("/sentinel/archive")
+    def archive_list():
+        from sentinel_loop.archive import archive_dir_for, list_archives
+
+        return {"archive_dir": str(archive_dir_for(_data_dir())), "archives": list_archives(_data_dir())}
+
+    @app.get("/sentinel/archive/download")
+    def archive_download(name: str = Query(...)):
+        from sentinel_loop.archive import archive_dir_for
+
+        safe = Path(name).name  # basename only
+        path = archive_dir_for(_data_dir()) / safe
+        if safe != name or not path.is_file():
+            raise HTTPException(404, "archive not found")
+        return FileResponse(path, media_type="application/zip", filename=safe)
+
+    @app.post("/sentinel/archive/upload")
+    async def archive_upload(file: UploadFile = File(...), apply: bool = Form(True)):
+        from sentinel_loop.archive import apply_archive, archive_dir_for, read_manifest
+
+        safe = Path(file.filename or "archive.zip").name
+        if safe != (file.filename or "") or not safe.endswith(".zip"):
+            raise HTTPException(400, "archive file name must be a plain .zip basename")
+        adir = archive_dir_for(_data_dir())
+        adir.mkdir(parents=True, exist_ok=True)
+        dest = adir / safe
+        dest.write_bytes(await file.read())
+        try:
+            if apply:
+                return apply_archive(dest, _data_dir(), ingest=True)
+            manifest = read_manifest(dest)
+            return {"archive": safe, "validated": True, "ingested": False,
+                    "file_count": manifest.get("file_count"), "source": manifest.get("source"),
+                    "created_at": manifest.get("created_at")}
+        except (ValueError, FileNotFoundError) as exc:
+            dest.unlink(missing_ok=True)
+            raise HTTPException(400, f"invalid sentinel input archive: {exc}") from None
 
     # --- data overview for the UI ---
     @app.get("/sentinel/data")

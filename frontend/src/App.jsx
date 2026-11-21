@@ -4,7 +4,7 @@ import UploadPanel from './panels/UploadPanel.jsx'
 import PipelinePanel from './panels/PipelinePanel.jsx'
 import WatchPanel from './panels/WatchPanel.jsx'
 import TimestralPanel from './panels/TimestralPanel.jsx'
-import { MistralPixelLogo, SafetralShield } from './components/pixel.jsx'
+import { MistralPixelLogo } from './components/pixel.jsx'
 
 async function check(path, signal) {
   const response = await fetch(path, { signal, cache: 'no-store' })
@@ -54,7 +54,7 @@ export default function App() {
         <a className="brand" href="/" aria-label="Mistralethon home"><MistralPixelLogo size={44} title="Mistral" /></a>
         <span className="wordmark">Mistralethon</span>
         <span className="safetral-badge" title="Shieldstral guards every alert: labeling, PII filtering, verification">
-          <SafetralShield size={20} color="#1a7f37" title="SAFETRAL guard active" />
+          <img className="safetral-mark" src="/safetral-mark.png" alt="Safetral logo" width="22" height="24" />
           <span>Safetral<small>shieldstral guard</small></span>
         </span>
       </header>
@@ -66,6 +66,7 @@ export default function App() {
       {tab === 'Status' && (
         <>
           <section className="intro">
+            <img className="safetral-intro-logo" src="/safetral-logo.png" alt="Safetral — Shieldstral guard" width="760" height="460" />
             <p className="eyebrow">A small beginning. A big possibility.</p>
             <h1>Sentinel-Loop<br /><em>detect. guard. explain.</em></h1>
             <p className="lede">

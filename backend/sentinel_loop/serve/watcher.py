@@ -71,6 +71,15 @@ class FeedbackRequest(BaseModel):
     reviewer: str = ""
 
 
+class DemoRequest(BaseModel):
+    incident_id: Optional[str] = None  # None -> replay every raw bundle
+    metrics: Optional[list[str]] = None  # None -> all configured metrics present in the bundle
+    strategy: str = "forecasting"
+    shadow: bool = True  # shadow: chain runs, Shieldstral gate skipped, alerts logged
+    max_windows: int = Field(default=80, ge=1, le=5000)
+    window_scope: str = Field(default="incident", pattern="^(incident|full)$")  # full replays hard negatives too
+
+
 class _StreamState:
     """In-memory ring buffer of recent points + last emitted window per metric."""
 
@@ -231,6 +240,35 @@ def create_sentinel_router(
     @router.get("/alerts")
     def list_alerts(limit: int = 100):
         return {"alerts": [a.model_dump(mode="json") for a in get_store().list_alerts(limit)]}
+
+    @router.post("/demo")
+    def demo(req: DemoRequest):
+        """Replay stored incident bundle(s) through the fixed detection chain:
+        Timestral detects -> Shieldstral verifies (false-positive gate) ->
+        Large explains (printed + stored). Shows alarms raised AND false
+        alarms suppressed, per window, with the full chain trace."""
+        from .demo import run_demo
+
+        cfg = get_config()
+        art = Path(artifacts_dir_for(settings)) / f"detector_{req.strategy}.json"
+        if not art.exists():
+            raise HTTPException(503, f"no trained detector at {art}; run train-detection first")
+        det = load_detector(art)
+        policy = load_policy(cfg.policies_dir, "alert_verification_policy.yaml")
+        question = policy.get("pair_question", "Does this evidence support firing an alert for this metric window?")
+        chain = DetectionChain(det, cfg, get_clients(), question=question)
+        try:
+            return run_demo(
+                settings.data_dir, cfg, det, chain,
+                store=get_store(),
+                incident_id=req.incident_id,
+                metrics=req.metrics,
+                shadow=req.shadow,
+                max_windows_per_metric=req.max_windows,
+                window_scope=req.window_scope,
+            )
+        except FileNotFoundError as exc:
+            raise HTTPException(404, str(exc)) from None
 
     return router
 

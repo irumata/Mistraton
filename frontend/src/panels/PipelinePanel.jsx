@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { api, apiPost } from '../api.js'
 
 const STAGES = [
+  { id: 'prepare-archive', label: 'prepare-archive', hint: 'zip work/ → <data>/archive/*.zip (sha256 manifest)' },
+  { id: 'apply-archive', label: 'apply-archive', hint: 'verify + extract newest archive → raw/ + ingest' },
   { id: 'ingest', label: 'ingest', hint: 'raw/ bundles → records.jsonl' },
   { id: 'extract-metrics', label: 'extract-metrics', hint: 'Mistral Large → metrics.yaml (API key needed)' },
   { id: 'label-windows', label: 'label-windows', hint: 'Safetral (Shieldstral) labels → labels.db' },

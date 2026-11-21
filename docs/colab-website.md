@@ -20,9 +20,11 @@ availability still depends on the Colab runtime being online.
    a Colab IP or retain a CNAME to an old random quick-tunnel hostname.
 5. Copy the connector token from the tunnel setup command. This is the token
    for this tunnel, not a Cloudflare Global API Key.
-6. In Colab Secrets (key icon), add `CF_TUNNEL_TOKEN` and
-   `SENTINEL_WEB_PASSWORD`. Choose a unique random password of at least
-   32 characters and enable notebook access for both secrets.
+6. In the project `Mistraton/.env`, set `CF_TUNNEL_TOKEN` to the Cloudflare
+   connector token and `SENTINEL_WEB_PASSWORD` to a unique random password
+   you create yourself (at least 32 characters). The notebook already loads
+   this file. Colab Secrets are an optional fallback for settings absent from
+   `.env`; enable notebook access if using that fallback.
 
 ## Run the updated notebook
 
@@ -40,7 +42,7 @@ availability still depends on the Colab runtime being online.
    anonymous requests receive 401 while an authenticated health request works.
    An unknown process already listening on port 8000 stops startup.
 5. The named-tunnel cell rechecks local authentication before connecting. It
-   uses `CF_TUNNEL_TOKEN` from Secrets and has no quick-tunnel fallback. It
+   uses `CF_TUNNEL_TOKEN` from the project `.env` (or optional Colab Secrets) and has no quick-tunnel fallback. It
    then checks anonymous public requests, and closes its connector if a
    public authentication check fails or the hostname is not ready.
 6. Open `https://safestral.dpdns.org`. The browser asks for username

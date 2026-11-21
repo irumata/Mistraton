@@ -2,6 +2,7 @@
 
 import io
 import json
+import ast
 import os
 import pathlib
 import subprocess
@@ -38,6 +39,7 @@ def tunnel_harness(monkeypatch):
     namespace = {
         "os": os,
         "userdata": SimpleNamespace(get=lambda _: "test-connector-token"),
+        "_required_secret": lambda _: "test-connector-token",
         "PUBLIC_URL": "https://safestral.dpdns.org",
         "WEB_USERNAME": "safestral",
         "PROTECTED_PATHS": ["/", "/api/health", "/sentinel/data"],
@@ -94,3 +96,28 @@ def test_failed_public_path_closes_the_connector(tunnel_harness):
     with pytest.raises(RuntimeError, match="Public authentication check failed"):
         exec(TUNNEL_CELL, namespace)
     assert calls[-1] == "killed"
+
+
+@pytest.mark.parametrize("env_value,provider_value,expected", [
+    ("from-project-env", "from-colab", "from-project-env"),
+    ("", "from-colab", "from-colab"),
+    (None, None, None),
+])
+def test_notebook_secret_source_prefers_project_env(monkeypatch, env_value, provider_value, expected):
+    mount_source = next(
+        "".join(cell["source"]) for cell in json.loads(NOTEBOOK.read_text())["cells"]
+        if cell.get("metadata", {}).get("id", cell.get("id")) == "f89e3488"
+    )
+    function = next(node for node in ast.parse(mount_source).body
+                    if isinstance(node, ast.FunctionDef) and node.name == "_required_secret")
+    namespace = {"os": os, "userdata": SimpleNamespace(get=lambda _: provider_value)}
+    if env_value is None:
+        monkeypatch.delenv("TEST_NOTEBOOK_SETTING", raising=False)
+    else:
+        monkeypatch.setenv("TEST_NOTEBOOK_SETTING", env_value)
+    exec(compile(ast.Module(body=[function], type_ignores=[]), str(NOTEBOOK), "exec"), namespace)
+    if expected is None:
+        with pytest.raises(RuntimeError, match="is empty"):
+            namespace["_required_secret"]("TEST_NOTEBOOK_SETTING")
+    else:
+        assert namespace["_required_secret"]("TEST_NOTEBOOK_SETTING") == expected

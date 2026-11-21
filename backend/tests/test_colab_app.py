@@ -226,3 +226,78 @@ def test_websocket_upgrade_is_guarded(monkeypatch, tmp_path):
             pass
     with client.websocket_connect("/test-ws", headers={"Authorization": valid, "Origin": "https://safestral.dpdns.org"}) as socket:
         assert socket.receive_text() == "authenticated"
+
+
+def _make_work_src(tmp_path):
+    from sentinel_loop.examples.synthetic import generate_synthetic
+    from sentinel_loop.ingest.loader import ingest_directory
+
+    src = tmp_path / "work"
+    generate_synthetic(src / "raw")
+    ingest_directory(src / "raw", src)  # records.jsonl
+    return src
+
+
+def test_archive_prepare_list_download_upload(client, tmp_path):
+    src = _make_work_src(tmp_path)
+    res = client.post("/sentinel/archive/prepare", json={"src": str(src)})
+    assert res.status_code == 200, res.text
+    manifest = res.json()
+    assert manifest["file_count"] >= 4 and manifest["archive"].endswith(".zip")
+
+    listing = client.get("/sentinel/archive").json()
+    assert any(a["name"] == manifest["archive"] and a["valid"] for a in listing["archives"])
+
+    dl = client.get("/sentinel/archive/download", params={"name": manifest["archive"]})
+    assert dl.status_code == 200 and dl.headers["content-type"] == "application/zip"
+    assert len(dl.content) > 1000
+    # path traversal in the name is rejected
+    assert client.get("/sentinel/archive/download", params={"name": "../x.zip"}).status_code in (404, 422)
+
+    # upload + apply: bundles extracted into <data-dir>/raw and ingested
+    up = client.post(
+        "/sentinel/archive/upload",
+        files=[("file", (manifest["archive"], dl.content, "application/zip"))],
+        data={"apply": "true"},
+    )
+    assert up.status_code == 200, up.text
+    body = up.json()
+    assert body["ingested"] is True and body["records"] == 2
+    data = client.get("/sentinel/data").json()
+    assert set(data["raw_bundles"]) == {"inc-001", "inc-002"}
+
+
+def test_archive_upload_rejects_garbage(client):
+    up = client.post("/sentinel/archive/upload",
+                     files=[("file", ("evil.zip", b"not a zip at all", "application/zip"))])
+    assert up.status_code == 400
+    bad_name = client.post("/sentinel/archive/upload",
+                           files=[("file", ("../evil.zip", b"x", "application/zip"))])
+    assert bad_name.status_code in (400, 422)
+
+
+def test_pipeline_archive_stages_run_as_jobs(client, tmp_path):
+    # prepare-archive defaults to the repo work/ dir; run it as a pipeline job
+    res = client.post("/sentinel/pipeline/prepare-archive", json={})
+    assert res.status_code == 200, res.text
+    job_id = res.json()["job_id"]
+    for _ in range(120):
+        job = client.get(f"/sentinel/pipeline/jobs/{job_id}").json()
+        if job["status"] != "running":
+            break
+        time.sleep(0.5)
+    assert job["status"] == "done", job["log"]
+    listing = client.get("/sentinel/archive").json()
+    assert listing["archives"], "prepare-archive job must produce an archive"
+
+    # apply-archive (no args -> newest archive) extracts + ingests it
+    res = client.post("/sentinel/pipeline/apply-archive", json={})
+    job_id = res.json()["job_id"]
+    for _ in range(120):
+        job = client.get(f"/sentinel/pipeline/jobs/{job_id}").json()
+        if job["status"] != "running":
+            break
+        time.sleep(0.5)
+    assert job["status"] == "done", job["log"]
+    data = client.get("/sentinel/data").json()
+    assert len(data["records"]) >= 1
