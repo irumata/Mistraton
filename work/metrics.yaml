@@ -1,0 +1,66 @@
+version: 1
+window:
+  length_seconds: 300
+  step_seconds: 60
+  degraded_minutes: 30
+  default_lead_time_minutes: 20
+metrics:
+- name: response_time_ms
+  source: hf-nginx-logs:metrics/access.csv#response_time_ms
+  sampling_seconds: 60
+  aggregation: raw
+  expected_normal_range:
+  - '0'
+  - '600'
+  observed_bad_range:
+  - '1000'
+  - '5000'
+  lead_time_minutes: 20
+  why_relevant: nginx response time from HF mindweave/web-server-logs sample; spikes
+    during injected anomalies
+- name: error_5xx
+  source: hf-nginx-logs:metrics/access.csv#error_5xx
+  sampling_seconds: 60
+  aggregation: raw
+  expected_normal_range:
+  - '0'
+  - '0.1'
+  observed_bad_range:
+  - '0.5'
+  - '1'
+  lead_time_minutes: 20
+  why_relevant: 5xx indicator per request; database-outage anomaly shows up here
+- name: api_latency_ms
+  source: work/raw/*/metrics (synthesized; see work/synthesize_metrics.py)
+  sampling_seconds: 60
+  aggregation: 1m_avg
+  expected_normal_range:
+  - '60'
+  - '100'
+  observed_bad_range:
+  - '800'
+  - '5000'
+  lead_time_minutes: 25
+  why_relevant: synthetic precursor ramp before each incident (offline fixture)
+- name: error_rate
+  source: work/raw/*/metrics (synthesized; see work/synthesize_metrics.py)
+  sampling_seconds: 60
+  aggregation: 1m_avg
+  expected_normal_range:
+  - '0'
+  - '0.005'
+  observed_bad_range:
+  - '0.05'
+  - '0.5'
+  lead_time_minutes: 25
+  why_relevant: synthetic precursor ramp before each incident (offline fixture)
+thresholds:
+  band_k: 3.0
+  persistence_windows: 3
+  alert_confidence: 0.7
+  shadow_precision_threshold: 0.8
+  drift_precision_threshold: 0.6
+  min_reviews_for_drift: 5
+timestral:
+  size: 5M
+  backend: local

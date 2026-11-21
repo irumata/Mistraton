@@ -1,0 +1,9 @@
+{
+  "incident_id": "aiid-1646",
+  "timestamp_start": "2026-07-01T00:00:00Z",
+  "timestamp_end": "2026-07-02T00:00:00Z",
+  "severity_hint": "severe/catastrophic: first publicly known autonomous AI attack on a government; 85 credentials compromised, 2,564+ personnel records exfiltrated (MIT harm scale 4-5, national security)",
+  "linked_records": [
+    "https://incidentdatabase.ai/cite/1646"
+  ]
+}

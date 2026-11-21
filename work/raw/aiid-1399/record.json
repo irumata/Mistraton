@@ -1,0 +1,7 @@
+{
+  "incident_id": "aiid-1399",
+  "timestamp_start": "2026-01-28T00:00:00Z",
+  "timestamp_end": "2026-01-28T01:00:00Z",
+  "severity_hint": "catastrophic: two deaths (MIT harm scale 5 of 5, physical harm)",
+  "linked_records": ["https://incidentdatabase.ai/cite/1399"]
+}

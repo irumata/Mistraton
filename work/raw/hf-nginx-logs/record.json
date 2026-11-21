@@ -1,0 +1,7 @@
+{
+  "incident_id": "hf-nginx-logs",
+  "timestamp_start": "2024-01-01T00:15:12Z",
+  "timestamp_end": "2024-01-01T13:42:34Z",
+  "severity_hint": "unknown; dataset README states two injected anomalies (DDoS attempt and database outage)",
+  "linked_records": ["https://huggingface.co/datasets/mindweave/web-server-logs"]
+}
