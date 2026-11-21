@@ -167,6 +167,19 @@ def test_no_wildcard_cors(client):
     assert "access-control-allow-origin" not in response.headers
 
 
+def test_public_http_redirects_before_password_challenge(client):
+    response = client.get("http://safestral.dpdns.org/api/health?check=1", auth=None, follow_redirects=False)
+    assert response.status_code == 308
+    assert response.headers["location"] == "https://safestral.dpdns.org/api/health?check=1"
+    assert "www-authenticate" not in response.headers
+
+
+def test_https_still_requires_login_and_sets_hsts(client):
+    response = client.get("https://safestral.dpdns.org/api/health", auth=None)
+    assert response.status_code == 401
+    assert response.headers["strict-transport-security"] == "max-age=31536000"
+
+
 def test_frontend_assets_are_private_and_never_embed_keys(tmp_path, monkeypatch):
     dist = tmp_path / "dist"
     (dist / "assets").mkdir(parents=True)

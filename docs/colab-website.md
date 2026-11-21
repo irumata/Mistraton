@@ -1,73 +1,87 @@
-# Run the whole website on Google Colab
+# Safestral on Colab: fixed domain and mandatory login
 
-`notebooks/colab_website.ipynb` runs the **entire app in one notebook**: the React
-frontend, the FastAPI backend, the Sentinel-Loop pipeline UI (upload → ingest →
-extract-metrics → label-windows → build-dataset → train → evaluate → finetune),
-and a fine-tuned self-hosted Timestral checkpoint — exposed to the internet via a
-cloudflared quick tunnel.
+`notebooks/colab_website.ipynb` serves the React frontend and FastAPI/Sentinel-Loop
+backend together at `https://safestral.dpdns.org` through a Cloudflare named tunnel.
+The hostname remains stable when the Colab runtime restarts. Application
+availability still depends on the Colab runtime being online.
 
-## Architecture
+## One-time domain and tunnel setup
 
-```
-browser ──https──▶ https://<random>.trycloudflare.com ──▶ Colab :8000
-                                                              │
-              ┌──────────────────────── FastAPI (backend/colab_app.py) ───────────────────────┐
-              │  /            built React app (frontend/dist, SPA fallback)                   │
-              │  /api/*       status card endpoints (/api/db = SQLite check on Colab)         │
-              │  /sentinel/*  shared watcher router (health, watch, feedback, alerts)         │
-              │  /sentinel/upload, /sentinel/data, /sentinel/eval                              │
-              │  /sentinel/pipeline/<stage> + /sentinel/pipeline/jobs  (background CLI jobs)  │
-              │  /sentinel/timestral/chat   fine-tuned checkpoint on the Colab GPU            │
-              └───────────────────────────────────────────────────────────────────────────────┘
-                                                              │
-              Drive: My Drive/Colab Notebooks/Mistraton/  (data/, .env, repo copy)
-```
+1. Register `safestral.dpdns.org` through DigitalPlat if it is available. The
+   free slot requires account verification. Check the displayed cost is $0.
+2. Add the complete name to Cloudflare using its Free DNS plan. For the zone
+   prepared in this chat, assign `eric.ns.cloudflare.com` and
+   `raegan.ns.cloudflare.com` as the external nameservers in DigitalPlat.
+   Wait for Cloudflare to report the zone as Active.
+3. In Cloudflare, open Networking → Tunnels and create `safestral-colab`.
+4. Add a Published application route with Subdomain and Path empty, Domain
+   `safestral.dpdns.org`, protocol HTTP and service URL `localhost:8000`.
+   Let Cloudflare create the tunnel DNS record; do not point a DNS A record at
+   a Colab IP or retain a CNAME to an old random quick-tunnel hostname.
+5. Copy the connector token from the tunnel setup command. This is the token
+   for this tunnel, not a Cloudflare Global API Key.
+6. In Colab Secrets (key icon), add `CF_TUNNEL_TOKEN` and
+   `SENTINEL_WEB_PASSWORD`. Choose a unique random password of at least
+   32 characters and enable notebook access for both secrets.
 
-One origin → no CORS. The VM deployment (`backend/main.py` behind Caddy) is
-unchanged; `colab_app.py` only **adds** routes on top of the shared
-`create_sentinel_router()`.
+## Run the updated notebook
 
-## Run
+1. Close old cloudflared connectors using the first code cell **in the runtime
+   that served the old public URL**. This stops all cloudflared processes in
+   that runtime. If you cannot reconnect, use Colab's session manager to
+   terminate that old session. Editing a saved notebook does not change code
+   already running in an older runtime.
+2. On the first upgrade from the threaded server, restart that session once.
+   Data and model artifacts already saved to Drive remain there.
+3. Run cells top to bottom. The project is read from
+   `MyDrive/Colab Notebooks/Mistraton`; the updated frontend source is copied
+   to local Colab storage and rebuilt each time.
+4. Startup launches a fresh backend process on `127.0.0.1:8000` and verifies
+   anonymous requests receive 401 while an authenticated health request works.
+   An unknown process already listening on port 8000 stops startup.
+5. The named-tunnel cell rechecks local authentication before connecting. It
+   uses `CF_TUNNEL_TOKEN` from Secrets and has no quick-tunnel fallback. It
+   then checks anonymous public requests, and closes its connector if a
+   public authentication check fails or the hostname is not ready.
+6. Open `https://safestral.dpdns.org`. The browser asks for username
+   `safestral` (editable as `WEB_USERNAME`) and your chosen password.
 
-1. Upload `notebooks/colab_website.ipynb` to Colab, Runtime → **GPU** (T4/A100) if
-   you want `finetune-timestral`; CPU is fine otherwise.
-2. Run cells top to bottom. Cell 1 mounts Drive at `/content/drive/MyDrive`, loads
-   `My Drive/Colab Notebooks/Mistraton/.env` (never commit it), sets
-   `SENTINEL_DATA_DIR`/`SENTINEL_ARTIFACTS_DIR` to Drive-persistent paths, and adds
-   `…/Mistraton/backend` to `sys.path` — **no repo copy** (the Drive FS is slow per
-   file). Only the frontend skeleton (~36 files: `package.json`, `src/`, `public/`,
-   configs) is copied to `/content/frontend` because `npm install/build` needs local disk.
-3. Cell 2 pip-installs from absolute Drive paths; cell 3 builds the frontend
-   (`npm run build` → `/content/frontend/dist`).
-4. Cell 4 starts uvicorn on `0.0.0.0:8000` in a daemon thread.
-5. Cell 5 prints the public `https://….trycloudflare.com` URL — open it.
+## Authentication coverage
 
-## Website flow
+`backend/colab_security.py` is an ASGI guard around the whole Colab app.
+It protects the homepage, assets, all API methods, uploads, pipeline jobs,
+documentation, unknown routes and WebSocket upgrades. There is no public
+health endpoint or implicit trusted-loopback bypass. Authenticated browser
+writes must be same-origin, and no wildcard CORS policy is enabled. Public
+HTTP requests redirect to HTTPS before a password challenge.
 
-**Upload** an incident bundle (files → `data/raw/<incident_id>/` → `records.jsonl`)
-→ **Pipeline** buttons run each CLI stage as a background job with live logs →
-**Watch** posts metric streams to `/sentinel/watch` (shadow mode supported) and
-review alerts → **Timestral** chats with the QLoRA checkpoint saved by
-`finetune-timestral` to `data/artifacts/timestral-hf/`.
+`SENTINEL_WEB_PASSWORD` is mandatory; a missing/short password stops app
+construction. The legacy optional `SENTINEL_API_KEY` does not authenticate
+requests, and keys are no longer injected into HTML or JavaScript. API
+clients use HTTP Basic authentication on every request. Responses are
+marked private/no-store. Treat this as one shared demo login; it is not
+an individual-account system. Share the login only with authorized users.
 
-## Gotchas
+Notebook probes send the password only to the local loopback backend.
+Public probes send no credentials and do not follow redirects. Additional
+Cloudflare Access authentication can be added, but its login redirects must
+be accounted for in the public probes. The backend guard stays required.
 
-- Free Colab: ~90 min idle disconnect, 12 h hard limit; the tunnel URL changes every
-  session → re-run cell 5. Keep the tab open.
-- `SENTINEL_API_KEY` (optional, in Drive `.env`): when set, mutating endpoints
-  (`upload`, `pipeline`, `timestral`, `feedback`) require an `X-API-Key` header; the
-  key is injected into the served `index.html` as `window.__SENTINEL_KEY__`.
-- `finetune-timestral` needs the GPU deps from `backend/requirements-colab.txt`
-  (installed in cell 2) and a built dataset (`build-dataset`). Base model is
-  configurable via `--base-model` / `TIMESTRAL_BASE_MODEL` (default SmolLM2-135M).
-- Only the train split is used for fine-tuning; the held-out incident test set is
-  never touched (same rule as `tuning/train.py`).
+For local use, set `SENTINEL_WEB_USERNAME`, `SENTINEL_WEB_PASSWORD` and,
+when testing the public hostname, `SENTINEL_PUBLIC_URL` in your server's
+environment before running `python colab_app.py --host 127.0.0.1 --port 8000`.
+Never put actual credentials in the repository or notebook output.
 
-## Local equivalent
+## Validation
 
-```sh
-cd backend
-pip install -r requirements.txt
-SENTINEL_DATA_DIR=./data SENTINEL_DIST_DIR=../frontend/dist \
-  python colab_app.py --host 0.0.0.0 --port 8000
-```
+Run `PYTHONPATH=backend python -m pytest backend/tests/test_colab_app.py`.
+The suite covers missing/wrong/malformed credentials, reads and writes,
+static assets, a valid authenticated browser flow, cross-site requests,
+forged proxy headers, HTTP-to-HTTPS behavior and WebSocket upgrades.
+
+## Sources
+
+- [Cloudflare named tunnel setup](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/get-started/create-remote-tunnel/)
+- [Cloudflare tunnel token](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/configure-tunnels/run-parameters/#token)
+- [DigitalPlat registration](https://github.com/DigitalPlatDev/FreeDomain/tree/main/documents/tutorial/platform)
+- [FastAPI HTTP Basic authentication](https://fastapi.tiangolo.com/advanced/security/http-basic-auth/)

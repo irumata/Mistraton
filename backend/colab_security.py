@@ -11,7 +11,7 @@ import secrets
 from urllib.parse import urlsplit
 
 from starlette.datastructures import Headers, MutableHeaders
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, RedirectResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 
@@ -76,6 +76,15 @@ class ColabAuthMiddleware:
             await self.app(scope, receive, send)
             return
         headers = Headers(scope=scope)
+        # Never issue a browser password challenge over the public HTTP address.
+        if (scope["type"] == "http" and self.public_origin
+                and headers.get("host", "").lower() == urlsplit(self.public_origin).netloc.lower()
+                and scope["scheme"] != "https"):
+            path = scope.get("raw_path", b"/").decode("ascii", errors="ignore")
+            query = scope.get("query_string", b"").decode("ascii", errors="ignore")
+            target = self.public_origin + path + ("?" + query if query else "")
+            await RedirectResponse(target, status_code=308)(scope, receive, send)
+            return
         authenticated = self.authenticated(headers)
         unsafe = scope["type"] == "websocket" or scope.get("method") not in {"GET", "HEAD", "OPTIONS"}
         origin_ok = not unsafe or self.same_origin(scope, headers)
@@ -92,6 +101,8 @@ class ColabAuthMiddleware:
                 response_headers["X-Content-Type-Options"] = "nosniff"
                 response_headers["X-Frame-Options"] = "DENY"
                 response_headers["Referrer-Policy"] = "no-referrer"
+                if scope["scheme"] == "https":
+                    response_headers["Strict-Transport-Security"] = "max-age=31536000"
             await send(message)
 
         if not authenticated:
