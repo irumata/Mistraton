@@ -45,20 +45,30 @@ EXTRACTION_JSON = {
 }
 
 
-def make_mock_transport() -> callable:
-    """Transport double: Large -> extraction JSON; Shieldstral pair -> YES;
-    Shieldstral policy -> passes with PII redacted."""
+def make_mock_transport(shieldstral_verdict: str = "YES") -> callable:
+    """Transport double: Large -> extraction JSON / alert explanation JSON;
+    Shieldstral pair -> `shieldstral_verdict`; Shieldstral policy -> passes
+    with PII redacted."""
 
     def transport(model: str, messages: list[dict], response_format=None) -> str:
         user = messages[-1]["content"]
-        if "metric-extraction" in messages[0]["content"] or "metric-extraction" in user:
+        system = messages[0]["content"]
+        if "metric-extraction" in system or "metric-extraction" in user:
             payload = dict(EXTRACTION_JSON)
             m = re.search(r"incident_id: (\S+)", user)
             payload["incident_id"] = m.group(1) if m else "inc-unknown"
             return json.dumps(payload)
-        if "policy judge" in messages[0]["content"].lower():
-            return "YES"
-        if "content policy" in messages[0]["content"].lower():
+        if "alert-explanation" in system:
+            return json.dumps({
+                "summary": "mock explanation: verified metric deviation",
+                "why_timestral_flagged": "residual outside the predicted quantile band, sustained",
+                "why_shieldstral_verified": "pair verdict YES against the alert policy",
+                "likely_causes": ["mock cause"],
+                "recommended_actions": ["mock action"],
+            })
+        if "policy judge" in system.lower():
+            return shieldstral_verdict
+        if "content policy" in system.lower():
             redacted = re.sub(r"\b[\w.+-]+@[\w-]+\.[\w.]+\b", "[EMAIL]", user)
             return json.dumps({"passes": True, "redacted": redacted})
         return "YES"

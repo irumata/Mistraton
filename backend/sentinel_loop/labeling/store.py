@@ -55,6 +55,14 @@ class LabelingStore:
         Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         with self._conn() as conn:
             conn.executescript(SCHEMA)
+            self._migrate(conn)
+
+    @staticmethod
+    def _migrate(conn: sqlite3.Connection) -> None:
+        """Add columns introduced after the initial schema (existing DBs)."""
+        cols = {r["name"] for r in conn.execute("PRAGMA table_info(alerts)").fetchall()}
+        if "explanation" not in cols:
+            conn.execute("ALTER TABLE alerts ADD COLUMN explanation TEXT NOT NULL DEFAULT ''")
 
     def _conn(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.path)
@@ -116,47 +124,40 @@ class LabelingStore:
     def save_alert(self, alert: AlertEvent) -> None:
         with self._conn() as conn:
             conn.execute(
-                "INSERT OR REPLACE INTO alerts (alert_id, event_json, verified, reviewer, decided_at, created_at)"
-                " VALUES (?,?,?,?,?,?)",
+                "INSERT OR REPLACE INTO alerts (alert_id, event_json, verified, explanation, reviewer, decided_at, created_at)"
+                " VALUES (?,?,?,?,?,?,?)",
                 (alert.alert_id, alert.event.model_dump_json(),
                  None if alert.verified is None else int(alert.verified),
+                 alert.explanation or "",
                  alert.reviewer,
                  alert.decided_at.isoformat() if alert.decided_at else None,
                  alert.created_at.isoformat()),
             )
 
-    def get_alert(self, alert_id: str) -> AlertEvent | None:
-        with self._conn() as conn:
-            row = conn.execute("SELECT * FROM alerts WHERE alert_id=?", (alert_id,)).fetchone()
-        if not row:
-            return None
+    def _row_to_alert(self, row: sqlite3.Row) -> AlertEvent:
         from ..schemas import DetectionEvent
 
         return AlertEvent(
             alert_id=row["alert_id"],
             event=DetectionEvent.model_validate_json(row["event_json"]),
             verified=None if row["verified"] is None else bool(row["verified"]),
+            explanation=row["explanation"] or None,
             reviewer=row["reviewer"],
             decided_at=datetime.fromisoformat(row["decided_at"]) if row["decided_at"] else None,
             created_at=datetime.fromisoformat(row["created_at"]),
         )
 
+    def get_alert(self, alert_id: str) -> AlertEvent | None:
+        with self._conn() as conn:
+            row = conn.execute("SELECT * FROM alerts WHERE alert_id=?", (alert_id,)).fetchone()
+        if not row:
+            return None
+        return self._row_to_alert(row)
+
     def list_alerts(self, limit: int = 100) -> list[AlertEvent]:
         with self._conn() as conn:
             rows = conn.execute("SELECT * FROM alerts ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
-        from ..schemas import DetectionEvent
-
-        return [
-            AlertEvent(
-                alert_id=r["alert_id"],
-                event=DetectionEvent.model_validate_json(r["event_json"]),
-                verified=None if r["verified"] is None else bool(r["verified"]),
-                reviewer=r["reviewer"],
-                decided_at=datetime.fromisoformat(r["decided_at"]) if r["decided_at"] else None,
-                created_at=datetime.fromisoformat(r["created_at"]),
-            )
-            for r in rows
-        ]
+        return [self._row_to_alert(r) for r in rows]
 
     def record_review(self, alert_id: str, decision: str, reviewer: str) -> AlertEvent | None:
         """decision: 'confirmed' | 'rejected'. Flows back into the labeling store."""
@@ -170,9 +171,13 @@ class LabelingStore:
         return alert
 
     def reviewed_precision(self) -> tuple[float, int]:
+        """Precision over HUMAN-reviewed alerts only (decided_at set by /feedback).
+
+        Shieldstral verification at fire time is not a review; suppressed
+        candidates are not stored as alerts at all."""
         with self._conn() as conn:
             row = conn.execute(
-                "SELECT SUM(verified) AS c, COUNT(*) AS n FROM alerts WHERE verified IS NOT NULL"
+                "SELECT SUM(verified) AS c, COUNT(*) AS n FROM alerts WHERE decided_at IS NOT NULL"
             ).fetchone()
         n = row["n"] or 0
         c = row["c"] or 0

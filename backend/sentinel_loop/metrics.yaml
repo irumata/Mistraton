@@ -41,4 +41,14 @@ timestral:
   size: "5M"        # start smallest: 5M | 37M | 72M | 209M; scale only on held-out eval
   backend: local    # local self-hosted | forge | hf
 
+# Live detection chain (serve /watch). Fixed order, never reordered:
+#   1. Timestral detects a candidate window event (self-hosted, the only detector)
+#   2. Shieldstral verifies the candidate against policy (false-positive gate)
+#   3. Mistral Large explains the fired alert; the explanation is printed
+chain:
+  verify_with_shieldstral: true   # gate candidate events through Shieldstral
+  suppress_unverified: true        # Shieldstral-rejected candidates are dropped, not fired
+  explain_with_large: true         # run the Large explanation stage on fired alerts
+  explanation_max_chars: 4000      # cap for the prompt payload sent to Large
+
 policies_dir: policies

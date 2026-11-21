@@ -23,10 +23,15 @@ raw incident data ──▶ ingest ──▶ extract-metrics ──▶ label-win
    evaluate (held-out incidents: P/R/F1, lead time, FP/1000 window-h, quantile loss)
               │
               ▼
-   serve /watch (self-hosted Timestral, FastAPI) ──▶ Shieldstral alert verification
+   serve /watch — live detection chain per window (serve/chain.py, fixed order):
+              │     1. Timestral detects (self-hosted, FastAPI)
+              │     2. Shieldstral verifies -> unverified candidates suppressed (false-positive gate)
+              │     3. Mistral Large explains the fired alert -> explanation PRINTED + stored
               │                                               │
               └────────────── feedback ◀───────────────────────┘
                     (reviews + drift/new-incident/scheduled retrain triggers)
+
+Full system architecture: see `architecture.md` at the repo root.
 ```
 
 ## Layout

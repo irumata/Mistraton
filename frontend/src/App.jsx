@@ -4,6 +4,7 @@ import UploadPanel from './panels/UploadPanel.jsx'
 import PipelinePanel from './panels/PipelinePanel.jsx'
 import WatchPanel from './panels/WatchPanel.jsx'
 import TimestralPanel from './panels/TimestralPanel.jsx'
+import { MistralPixelLogo, SafetralShield } from './components/pixel.jsx'
 
 async function check(path, signal) {
   const response = await fetch(path, { signal, cache: 'no-store' })
@@ -49,7 +50,14 @@ export default function App() {
   const [tab, setTab] = useState('Status')
   return (
     <main>
-      <header><a className="brand" href="/">M<span>↗</span></a><span className="wordmark">Mistralethon</span></header>
+      <header>
+        <a className="brand" href="/" aria-label="Mistralethon home"><MistralPixelLogo size={44} title="Mistral" /></a>
+        <span className="wordmark">Mistralethon</span>
+        <span className="safetral-badge" title="Shieldstral guards every alert: labeling, PII filtering, verification">
+          <SafetralShield size={20} color="#1a7f37" title="SAFETRAL guard active" />
+          <span>Safetral<small>shieldstral guard</small></span>
+        </span>
+      </header>
       <nav className="tabs">
         {TABS.map(t => (
           <button key={t} className={tab === t ? 'tab active' : 'tab'} onClick={() => setTab(t)}>{t}</button>
@@ -58,9 +66,13 @@ export default function App() {
       {tab === 'Status' && (
         <>
           <section className="intro">
-            <p className="eyebrow">A SMALL BEGINNING. A BIG POSSIBILITY.</p>
-            <h1>Make something<br /><em>worth building.</em></h1>
-            <p className="lede">Sentinel-Loop: upload incident data, extract metrics, tune Timestral, watch live streams.</p>
+            <p className="eyebrow">A small beginning. A big possibility.</p>
+            <h1>Sentinel-Loop<br /><em>detect. guard. explain.</em></h1>
+            <p className="lede">
+              Upload incident data, extract metrics with Mistral Large, label windows with Safetral (Shieldstral),
+              tune Timestral — then watch live streams through the chain:
+              <b> Timestral detects → Safetral verifies → Large explains</b>.
+            </p>
           </section>
           <StatusCard />
         </>

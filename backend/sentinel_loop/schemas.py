@@ -130,10 +130,47 @@ class DetectionEvent(BaseModel):
     strategy: str = ""
 
 
+class AlertExplanation(BaseModel):
+    """Mistral Large explanation of a fired alert (printed + stored on the alert).
+
+    Produced by the third stage of the live detection chain, after Timestral
+    flagged the window and Shieldstral verified it.
+    """
+
+    summary: str
+    why_timestral_flagged: str = ""
+    why_shieldstral_verified: str = ""
+    likely_causes: list[str] = Field(default_factory=list)
+    recommended_actions: list[str] = Field(default_factory=list)
+    raw: str = ""  # raw model output, kept for audit
+
+
+class ChainStage(BaseModel):
+    """One stage of the live detection chain (timstral -> shieldstral -> large)."""
+
+    stage: str  # "timstral" | "shieldstral" | "large"
+    model: str
+    passed: bool
+    detail: str = ""
+    seconds: float = 0.0
+
+
+class ChainResult(BaseModel):
+    """Outcome of running one window through the detection chain."""
+
+    event: Optional[DetectionEvent] = None
+    alert: Optional[AlertEvent] = None
+    explanation: Optional[AlertExplanation] = None
+    stages: list[ChainStage] = Field(default_factory=list)
+    fired: bool = False  # an alert was emitted (verified, or shadow-logged)
+    suppressed: bool = False  # Shieldstral rejected the candidate (false positive avoided)
+
+
 class AlertEvent(BaseModel):
     alert_id: str
     event: DetectionEvent
     verified: Optional[bool] = None  # None = shadow mode (logged, not sent)
+    explanation: Optional[str] = None  # Mistral Large explanation, printed at fire time
     reviewer: str = ""
     decided_at: Optional[datetime] = None
     created_at: datetime = Field(default_factory=utcnow)

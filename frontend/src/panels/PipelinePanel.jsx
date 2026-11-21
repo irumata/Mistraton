@@ -4,7 +4,7 @@ import { api, apiPost } from '../api.js'
 const STAGES = [
   { id: 'ingest', label: 'ingest', hint: 'raw/ bundles → records.jsonl' },
   { id: 'extract-metrics', label: 'extract-metrics', hint: 'Mistral Large → metrics.yaml (API key needed)' },
-  { id: 'label-windows', label: 'label-windows', hint: 'Shieldstral window labels → labels.db' },
+  { id: 'label-windows', label: 'label-windows', hint: 'Safetral (Shieldstral) labels → labels.db' },
   { id: 'build-dataset', label: 'build-dataset', hint: 'windows.jsonl + splits.json' },
   { id: 'train-detection', label: 'train-detection', hint: 'forecasting detector (primary)' },
   { id: 'train-embedding-head', label: 'train-embedding-head', hint: 'embedding classifier head' },

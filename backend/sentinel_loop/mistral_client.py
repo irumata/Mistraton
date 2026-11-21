@@ -21,7 +21,25 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional, Protocol
 
+from .schemas import AlertExplanation, DetectionEvent
+
 logger = logging.getLogger(__name__)
+
+EXPLAIN_SYSTEM_PROMPT = """You are the alert-explanation stage of an incident-detection system (Sentinel-Loop).
+A self-hosted time-series model (Timestral) flagged a metric window, and a policy
+model (Shieldstral) verified the candidate alert. Your job is to explain the alert
+to the on-call human in plain language.
+Output STRICT JSON only, matching this schema:
+{
+  "summary": str,                  // one or two sentences: what fired, on which metric, when
+  "why_timestral_flagged": str,    // what the detector saw (residual vs predicted band, persistence, state)
+  "why_shieldstral_verified": str, // why the evidence passed the verification policy
+  "likely_causes": [str],          // ranked hypotheses grounded in the provided ranges
+  "recommended_actions": [str]     // concrete next steps for the on-call
+}
+Rules: only use facts present in the payload; expected_normal_range vs observed_bad_range
+of the metric are the ground truth for "normal" vs "bad"; never invent metrics or timestamps.
+"""
 
 
 class Transport(Protocol):
@@ -205,6 +223,50 @@ class MistralClients:
             row = json.loads(line)
             outputs[int(row["custom_id"])] = row["response"]["body"]["choices"][0]["message"]["content"]
         return outputs
+
+    # -- Mistral Large: alert explanation (detection-chain stage 3) ---------
+    def large_explain_alert(
+        self,
+        event: DetectionEvent,
+        verified: Optional[bool],
+        metric_spec: Optional[dict] = None,
+        recent_values: Optional[list[Optional[float]]] = None,
+        max_chars: int = 4000,
+    ) -> AlertExplanation:
+        """Explain a fired alert for the on-call human. Third stage of the live
+        detection chain (after Timestral detection and Shieldstral verification).
+        Returns structured AlertExplanation; on unparseable output the raw text
+        is kept in `raw` and surfaced as the summary."""
+        payload = {
+            "alert_event": json.loads(event.model_dump_json()),
+            "shieldstral_verified": verified,  # None = shadow mode (logged, not sent)
+            "metric_spec": metric_spec or {},
+            "recent_values_tail": [v for v in (recent_values or [])[-30:]],
+        }
+        user = json.dumps(payload, indent=2)
+        if len(user) > max_chars:
+            user = user[:max_chars] + "\n...(truncated)"
+        out = self._call(
+            self.large_model,
+            "large.explain_alert",
+            [
+                {"role": "system", "content": EXPLAIN_SYSTEM_PROMPT},
+                {"role": "user", "content": user},
+            ],
+            response_format={"type": "json_object"},
+        )
+        try:
+            parsed = json.loads(out)
+            return AlertExplanation(
+                summary=str(parsed.get("summary", "")).strip() or out.strip()[:500],
+                why_timestral_flagged=str(parsed.get("why_timestral_flagged", "")),
+                why_shieldstral_verified=str(parsed.get("why_shieldstral_verified", "")),
+                likely_causes=[str(c) for c in parsed.get("likely_causes", [])],
+                recommended_actions=[str(a) for a in parsed.get("recommended_actions", [])],
+                raw=out,
+            )
+        except json.JSONDecodeError:
+            return AlertExplanation(summary=out.strip()[:500], raw=out)
 
     # -- Shieldstral: pair / policy / PII -----------------------------------
     def shieldstral_pair(self, question: str, evidence_a: str, evidence_b: str) -> bool:

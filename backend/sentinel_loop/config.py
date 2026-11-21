@@ -52,6 +52,19 @@ class TimestralConfig(BaseModel):
     backend: str = "local"  # local | forge | hf
 
 
+class ChainConfig(BaseModel):
+    """Live detection chain settings (serve /watch).
+
+    Chain order is fixed: Timestral detects -> Shieldstral verifies (false-
+    positive gate) -> Mistral Large explains (printed). Never reordered.
+    """
+
+    verify_with_shieldstral: bool = True  # gate candidate events through Shieldstral
+    suppress_unverified: bool = True  # Shieldstral-rejected candidates are dropped, not fired
+    explain_with_large: bool = True  # run the Large explanation stage on fired alerts
+    explanation_max_chars: int = 4000  # cap for the prompt payload sent to Large
+
+
 class MetricsConfig(BaseModel):
     """The monitoring contract + thresholds (metrics.yaml)."""
 
@@ -60,6 +73,7 @@ class MetricsConfig(BaseModel):
     metrics: list[MetricSpec] = Field(default_factory=list)
     thresholds: Thresholds = Thresholds()
     timestral: TimestralConfig = TimestralConfig()
+    chain: ChainConfig = ChainConfig()
     policies_dir: str = str(DEFAULT_POLICIES_DIR)
 
     def metric(self, name: str) -> Optional[MetricSpec]:

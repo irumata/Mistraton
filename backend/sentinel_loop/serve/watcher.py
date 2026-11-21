@@ -1,16 +1,20 @@
-"""FastAPI watcher: self-hosted Timestral scoring live metric streams.
+"""FastAPI watcher: live detection chain over self-hosted Timestral streams.
 
-POST /watch consumes live streams defined in metrics.yaml and emits events
-{metric, model_confidence, window_state, lead_time_minutes}. Candidate alerts
-are re-verified by Shieldstral against policy before firing; in shadow mode
-alerts are logged, not sent. Reviewer confirmations/rejections flow back into
-the labeling store (feedback loop).
+POST /watch consumes live streams defined in metrics.yaml and runs every new
+window through the fixed detection chain (see serve/chain.py):
+
+    Timestral (detect) -> Shieldstral (verify, false-positive gate) -> Mistral Large (explain, printed)
+
+Emits detection events {metric, model_confidence, window_state, lead_time_minutes}
+plus fired alerts (with the printed Large explanation attached). Candidates
+rejected by Shieldstral are suppressed, not fired. In shadow mode alerts are
+logged, not sent. Reviewer confirmations/rejections flow back into the
+labeling store (feedback loop).
 """
 
 from __future__ import annotations
 
 import logging
-import uuid
 from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -24,8 +28,9 @@ from ..config import (MetricsConfig, Settings, artifacts_dir_for, db_path_for,
 from ..feedback.loop import check_drift_and_trigger, record_review
 from ..labeling.store import LabelingStore
 from ..mistral_client import MistralClients
-from ..schemas import AlertEvent, DetectionEvent, WindowState
+from ..schemas import AlertEvent, ChainResult, DetectionEvent
 from ..tuning.strategies import BaseDetector, load_detector
+from .chain import DetectionChain
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +49,8 @@ class WatchResponse(BaseModel):
     events: list[DetectionEvent]
     alerts: list[AlertEvent]
     shadow: bool
+    suppressed: int = 0  # candidates rejected by Shieldstral (false positives avoided)
+    chains: list[ChainResult] = Field(default_factory=list)  # per-window chain trace
 
 
 class FeedbackRequest(BaseModel):
@@ -76,6 +83,7 @@ def create_sentinel_router(
     _config = config
     _store = store
     _clients = clients
+    _chain: Optional[DetectionChain] = None
 
     def get_store() -> LabelingStore:
         nonlocal _store
@@ -107,21 +115,29 @@ def create_sentinel_router(
                                       shieldstral_model=settings.shieldstral_model)
         return _clients
 
+    def get_chain() -> DetectionChain:
+        """The live detection chain: timstral -> shieldstral -> large (printed)."""
+        nonlocal _chain
+        if _chain is None:
+            cfg = get_config()
+            policy = load_policy(cfg.policies_dir, "alert_verification_policy.yaml")
+            question = policy.get("pair_question", "Does this evidence support firing an alert?")
+            _chain = DetectionChain(get_detector(), cfg, get_clients(), question=question)
+        return _chain
+
     @router.get("/health")
     def health():
         return {"status": "ok", "service": "sentinel-loop"}
 
     @router.post("/watch", response_model=WatchResponse)
     def watch(req: WatchRequest):
-        det = get_detector()
         cfg = get_config()
+        chain = get_chain()
         wlen = timedelta(seconds=cfg.window.length_seconds)
-        step = timedelta(seconds=cfg.window.step_seconds)
         events: list[DetectionEvent] = []
         alerts: list[AlertEvent] = []
-        policy = load_policy(cfg.policies_dir, "alert_verification_policy.yaml")
-        question = policy.get("pair_question", "Does this evidence support firing an alert?")
-        cl = get_clients()
+        chains: list[ChainResult] = []
+        suppressed = 0
 
         for metric, points in req.streams.items():
             spec = cfg.metric(metric)
@@ -151,34 +167,22 @@ def create_sentinel_router(
                 if ws <= state.last_emitted.get(metric, datetime.min.replace(tzinfo=timezone.utc)):
                     history.append(vals)
                     continue
-                ev = det.detect(metric, vals, history, window_start=ws, window_end=we)
+                # fixed chain: timstral detects -> shieldstral verifies -> large explains (printed)
+                res = chain.run(metric, vals, history, window_start=ws, window_end=we, shadow=req.shadow)
                 history.append(vals)
-                if ev is None:
+                if res.event is None:
                     continue
                 state.last_emitted[metric] = ws
-                events.append(ev)
-                if ev.model_confidence >= cfg.thresholds.alert_confidence:
-                    verified: Optional[bool] = None
-                    if req.shadow:
-                        verified = None  # shadow: logged, not sent
-                    elif cl is not None:
-                        try:
-                            verified = cl.shieldstral_pair(
-                                question,
-                                f"metric={metric} state={ev.window_state.value} confidence={ev.model_confidence:.2f}",
-                                f"window=[{ws.isoformat()}, {we.isoformat()}) lead={ev.lead_time_minutes}min",
-                            )
-                        except RuntimeError:
-                            verified = False
-                    else:
-                        verified = False
-                    alert = AlertEvent(
-                        alert_id=uuid.uuid4().hex[:12], event=ev,
-                        verified=verified if not req.shadow else None,
-                    )
-                    get_store().save_alert(alert)
-                    alerts.append(alert)
-        return WatchResponse(events=events, alerts=alerts, shadow=req.shadow)
+                events.append(res.event)
+                chains.append(res)
+                if res.suppressed:
+                    suppressed += 1
+                    continue
+                if res.fired and res.alert is not None:
+                    get_store().save_alert(res.alert)
+                    alerts.append(res.alert)
+        return WatchResponse(events=events, alerts=alerts, shadow=req.shadow,
+                             suppressed=suppressed, chains=chains)
 
     @router.post("/feedback")
     def feedback(req: FeedbackRequest):
