@@ -132,6 +132,25 @@ uv pip compile requirements-dev.in --python-version 3.12 --generate-hashes --upg
 
 Official container base images track supported major versions, not immutable digests. Pull/rebuild during planned maintenance and test before production; pin reviewed image digests if you need fully repeatable base images. `bash scripts/compose.sh build --pull api web` updates build bases, and `bash scripts/compose.sh pull db redis` fetches data service patch images. Never switch PostgreSQL to a different major version on the existing data volume without a supported upgrade or dump/restore. Keep old images needed for rollback. Avoid `docker system prune --volumes` and do not automatically remove old images/releases.
 
+## Voice output (Voxtral TTS)
+
+The site can speak any text aloud through Mistral's Voxtral TTS at `POST /api/voice/say` (`{"text": "...", "voice_id": "..."}` returns `audio/mpeg`); the frontend has a "Bea Cribella" voice card that uses it. `GET /api/voice/status` reports whether it is enabled. The endpoint is public and metered (about $0.016 per 1K characters, text capped at 4000 characters per request).
+
+To enable it on the live site, add the key to the VM `.env` used by Compose (never commit it):
+
+```bash
+ssh -i ~/.ssh/mistraton_deploy deploy@130.162.187.46
+sudo -iu deploy  # or edit as the file's owner with mode 600 preserved
+# in ~/hackathon/shared/.env (or the app .env your compose --env-file uses):
+MISTRAL_API_KEY=...            # from https://console.mistral.ai
+VOICE_MODEL=voxtral-mini-tts-3-0
+VOICE_DEFAULT=voice_...        # optional preset/cloned voice id, e.g. the Bea Cribella voice
+cd ~/hackathon/current && bash scripts/up.sh
+curl -s https://mistraleton.duckdns.org/api/voice/status
+```
+
+Without `MISTRAL_API_KEY` the router still mounts; `/api/voice/say` returns 503 and the frontend shows voice as unavailable, so the rest of the site is unaffected. To clone the Bea Cribella voice, upload a short sample in Mistral Studio (or via the API) and set the returned `voice_id` as `VOICE_DEFAULT`.
+
 ## Upgrade path beyond one VM
 
 1. **Measure first.** Compare CPU/memory, queue depth, job duration, DB latency and disk use. Add replicas only where they help. Build during quieter periods on very small VMs.

@@ -18,6 +18,7 @@ The connected GitHub account was verified as **irumata**. If the target is anoth
 - React page with live application/database checks and a retry button.
 - `GET /api/health`: liveness, returns `{"status":"ok","project":"Mistralethon"}`.
 - `GET /api/db`: checks the real application schema; HTTP 503 on database failure, without exposing connection details.
+- Optional voice output via Voxtral TTS: `POST /api/voice/say` returns `audio/mpeg`, `GET /api/voice/status` reports the capability. Enable with `MISTRAL_API_KEY` (plus optional `VOICE_MODEL`/`VOICE_DEFAULT`); see [docs/OPERATIONS.md](docs/OPERATIONS.md#voice-output-voxtral-tts).
 - `/api/docs` and `/api/openapi.json`: FastAPI documentation.
 - Idempotent SQL migration, schema version 1, and separate administrator/application credentials. The API connects as **non-superuser** `app`; only the migration service receives the administrator credential.
 - PostgreSQL `17-alpine`, persistent named database/Caddy/Redis volumes, Docker log rotation and memory limits. No host bind mounts, avoiding SELinux relabeling issues.

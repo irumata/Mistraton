@@ -55,3 +55,8 @@ footer { display: flex; justify-content: space-between; gap: 12px; border-top: 1
 .msg b { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #766e5e; }
 .msg pre { border: 0; background: none; padding: 4px 0 0; margin: 0; max-height: none; }
 .msg.assistant { background: #f6f3ea; }
+
+/* --- Voice (Voxtral TTS) --- */
+.voice-panel { max-width: 600px; }
+.voice-panel textarea { display: block; width: 100%; box-sizing: border-box; min-height: 84px; resize: vertical; }
+.voice-panel input { display: block; width: 100%; box-sizing: border-box; margin-top: 10px; }

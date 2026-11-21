@@ -4,6 +4,7 @@ import UploadPanel from './panels/UploadPanel.jsx'
 import PipelinePanel from './panels/PipelinePanel.jsx'
 import WatchPanel from './panels/WatchPanel.jsx'
 import TimestralPanel from './panels/TimestralPanel.jsx'
+import VoicePanel from './panels/VoicePanel.jsx'
 
 async function check(path, signal) {
   const response = await fetch(path, { signal, cache: 'no-store' })
@@ -13,7 +14,7 @@ async function check(path, signal) {
   return data
 }
 
-const TABS = ['Status', 'Upload', 'Pipeline', 'Watch', 'Timestral']
+const TABS = ['Status', 'Upload', 'Pipeline', 'Watch', 'Timestral', 'Voice']
 
 function StatusCard() {
   const [attempt, setAttempt] = useState(0)
@@ -69,6 +70,7 @@ export default function App() {
       {tab === 'Pipeline' && <PipelinePanel />}
       {tab === 'Watch' && <WatchPanel />}
       {tab === 'Timestral' && <TimestralPanel />}
+      {tab === 'Voice' && <VoicePanel />}
       <footer><span>Mistralethon</span><span>Built to begin.</span></footer>
     </main>
   )

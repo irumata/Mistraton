@@ -42,3 +42,11 @@ try:
     app.include_router(create_sentinel_router(), prefix="/sentinel", tags=["sentinel-loop"])
 except Exception:  # noqa: BLE001 - the website must stay up even if sentinel deps break
     logger.warning("Sentinel-Loop router not mounted", exc_info=True)
+
+# --- Voice output via Voxtral TTS (/api/voice/*), enabled by MISTRAL_API_KEY ---
+try:
+    from voice import create_voice_router
+
+    app.include_router(create_voice_router(), prefix="/api/voice", tags=["voice"])
+except Exception:  # noqa: BLE001 - the website must stay up even if voice deps break
+    logger.warning("Voice router not mounted", exc_info=True)
