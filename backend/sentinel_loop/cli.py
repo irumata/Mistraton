@@ -1,5 +1,5 @@
 """CLI entry points: ingest, extract-metrics, label-windows, build-dataset,
-train-detection, train-embedding-head, evaluate, serve, shadow-run.
+train-detection, train-embedding-head, evaluate, serve, shadow-run, finetune-timestral.
 
 Run from the backend/ directory:  python -m sentinel_loop <command> [options]
 """
@@ -130,6 +130,22 @@ def cmd_evaluate(args) -> int:
     return 0
 
 
+def cmd_finetune_timestral(args) -> int:
+    from .tuning.finetune import finetune
+
+    data_dir = _data_dir(args)
+    out = finetune(
+        data_dir,
+        out_dir=args.out or str(Path(artifacts_dir_for(Settings())) / "timestral-hf"),
+        base_model=args.base_model,
+        epochs=args.epochs,
+        max_samples=args.max_samples,
+        lora_r=args.lora_r,
+    )
+    print(f"fine-tuned Timestral -> {out}")
+    return 0
+
+
 def cmd_serve(args) -> int:
     import uvicorn
 
@@ -215,6 +231,15 @@ def build_parser() -> argparse.ArgumentParser:
     _add_common(p)
     p.add_argument("--strategy", default="forecasting", choices=["forecasting", "embedding", "zero-shot"])
     p.set_defaults(func=cmd_shadow_run)
+
+    p = sub.add_parser("finetune-timestral", help="QLoRA fine-tune a small open-weights checkpoint as Timestral (needs GPU + requirements-colab.txt)")
+    _add_common(p)
+    p.add_argument("--base-model", default=None, help="HF base model (default: $TIMESTRAL_BASE_MODEL or SmolLM2-135M-Instruct)")
+    p.add_argument("--out", default=None, help="output dir (default: <artifacts>/timestral-hf)")
+    p.add_argument("--epochs", type=float, default=1.0)
+    p.add_argument("--max-samples", type=int, default=None)
+    p.add_argument("--lora-r", type=int, default=16)
+    p.set_defaults(func=cmd_finetune_timestral)
 
     return parser
 

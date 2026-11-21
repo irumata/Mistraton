@@ -78,13 +78,13 @@ class MetricsConfig(BaseModel):
 class Settings(BaseModel):
     """Runtime settings from the environment."""
 
-    mistral_api_key: str = os.environ.get("MISTRAL_API_KEY", "")
-    large_model: str = os.environ.get("SENTINEL_LARGE_MODEL", "mistral-large-latest")
-    shieldstral_model: str = os.environ.get("SENTINEL_SHIELDSTRAL_MODEL", "shieldstral-latest")
-    data_dir: str = os.environ.get("SENTINEL_DATA_DIR", "data")
-    db_path: str = os.environ.get("SENTINEL_DB", "")  # empty -> <data_dir>/labels.db
-    artifacts_dir: str = os.environ.get("SENTINEL_ARTIFACTS_DIR", "")  # empty -> <data_dir>/artifacts
-    cost_log_path: str = os.environ.get("SENTINEL_COST_LOG", "")  # empty -> <data_dir>/cost_log.jsonl
+    mistral_api_key: str = Field(default_factory=lambda: os.environ.get("MISTRAL_API_KEY", ""))
+    large_model: str = Field(default_factory=lambda: os.environ.get("SENTINEL_LARGE_MODEL", "mistral-large-latest"))
+    shieldstral_model: str = Field(default_factory=lambda: os.environ.get("SENTINEL_SHIELDSTRAL_MODEL", "shieldstral-latest"))
+    data_dir: str = Field(default_factory=lambda: os.environ.get("SENTINEL_DATA_DIR", "data"))
+    db_path: str = Field(default_factory=lambda: os.environ.get("SENTINEL_DB", ""))  # empty -> <data_dir>/labels.db
+    artifacts_dir: str = Field(default_factory=lambda: os.environ.get("SENTINEL_ARTIFACTS_DIR", ""))  # empty -> <data_dir>/artifacts
+    cost_log_path: str = Field(default_factory=lambda: os.environ.get("SENTINEL_COST_LOG", ""))  # empty -> <data_dir>/cost_log.jsonl
 
 
 def load_metrics_config(path: str | os.PathLike) -> MetricsConfig:

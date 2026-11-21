@@ -336,3 +336,7 @@ entry points, tests, and `docker-compose.yml` for the watcher + labeling store).
 - [Docker firewalls](https://docs.docker.com/engine/network/packet-filtering-firewalls/) — Docker/firewalld NAT integration.
 - [GHCR](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry) and [package access](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility) — private/public pulls and Actions permissions.
 - [Caddy HTTPS](https://caddyserver.com/docs/automatic-https), [Compose profiles](https://docs.docker.com/compose/how-tos/profiles/), [DuckDNS specification](https://www.duckdns.org/spec.jsp).
+
+## Run the whole website on Google Colab
+
+`notebooks/colab_website.ipynb` starts the entire app in one notebook — React frontend + FastAPI backend + Sentinel-Loop pipeline UI (upload / ingest / extract-metrics / label / train / evaluate / finetune-timestral) — and exposes it via a cloudflared tunnel. Backend: `backend/colab_app.py` (adds `/sentinel/upload`, `/sentinel/pipeline/*`, `/sentinel/timestral/chat` and serves `frontend/dist` on top of the shared `/sentinel` router). See `docs/colab-website.md`.
