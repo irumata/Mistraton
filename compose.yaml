@@ -70,7 +70,11 @@ services:
     mem_limit: 192m
     memswap_limit: 320m
     pids_limit: 80
-    environment: *db-client
+    environment:
+      <<: *db-client
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
+      VOICE_MODEL: ${VOICE_MODEL:-voxtral-mini-tts-3-0}
+      VOICE_DEFAULT: ${VOICE_DEFAULT:-}
     depends_on:
       db:
         condition: service_healthy
