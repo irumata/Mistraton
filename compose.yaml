@@ -1,0 +1,151 @@
+name: mistraleton
+
+x-logging: &small-logs
+  driver: json-file
+  options:
+    max-size: "5m"
+    max-file: "2"
+
+x-app: &app
+  image: ghcr.io/${GH_OWNER:-irumata}/mistraleton-api:${IMAGE_TAG:-latest}
+  platform: linux/amd64
+  init: true
+  read_only: true
+  tmpfs:
+    - /tmp:size=16m,mode=1777
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  logging: *small-logs
+
+x-db-client: &db-client
+  PGHOST: db
+  PGPORT: "5432"
+  PGDATABASE: mistralethon
+  PGUSER: app
+  PGPASSWORD: ${DB_PASSWORD:?Run scripts/init-local.sh or scripts/setup-vm.sh first}
+
+services:
+  db:
+    image: postgres:17-alpine
+    platform: linux/amd64
+    restart: unless-stopped
+    mem_limit: 192m
+    memswap_limit: 320m
+    shm_size: 64m
+    pids_limit: 100
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: mistralethon
+      POSTGRES_PASSWORD: ${DB_ADMIN_PASSWORD:?Missing database administrator password}
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    command: [postgres, -c, shared_buffers=32MB, -c, max_connections=20, -c, work_mem=2MB, -c, maintenance_work_mem=16MB]
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U postgres -d mistralethon']
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
+    logging: *small-logs
+
+  migrate:
+    <<: *app
+    restart: "no"
+    mem_limit: 128m
+    memswap_limit: 192m
+    command: [python, migrate.py]
+    environment:
+      <<: *db-client
+      PGUSER: postgres
+      PGPASSWORD: ${DB_ADMIN_PASSWORD:?Missing database administrator password}
+      APP_DB_PASSWORD: ${DB_PASSWORD:?Missing application database password}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    <<: *app
+    restart: unless-stopped
+    mem_limit: 192m
+    memswap_limit: 320m
+    pids_limit: 80
+    environment: *db-client
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/db', timeout=5)"]
+      interval: 20s
+      timeout: 6s
+      retries: 5
+      start_period: 15s
+
+  web:
+    image: ghcr.io/${GH_OWNER:-irumata}/mistraleton-web:${IMAGE_TAG:-latest}
+    platform: linux/amd64
+    restart: unless-stopped
+    mem_limit: 96m
+    memswap_limit: 160m
+    pids_limit: 80
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-mistraleton.duckdns.org}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, 'http://127.0.0.1:8081/healthz']
+      interval: 20s
+      timeout: 3s
+      retries: 5
+    logging: *small-logs
+
+  redis:
+    image: redis:7-alpine
+    platform: linux/amd64
+    profiles: [jobs]
+    restart: unless-stopped
+    mem_limit: 64m
+    memswap_limit: 96m
+    pids_limit: 40
+    # RQ needs reliable queue data: never evict jobs to make room.
+    command: [redis-server, --maxmemory, 24mb, --maxmemory-policy, noeviction, --appendonly, "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    logging: *small-logs
+
+  worker:
+    <<: *app
+    profiles: [jobs]
+    restart: unless-stopped
+    mem_limit: 128m
+    memswap_limit: 192m
+    pids_limit: 60
+    command: [rq, worker, --url, 'redis://redis:6379/0', default]
+    environment:
+      <<: *db-client
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  db-data:
+  caddy-data:
+  caddy-config:
+  redis-data:

@@ -1,0 +1,40 @@
+# Use WITH compose.yaml. Compose >=2.24.4 is required for !override.
+# Default is Apple Silicon; set LOCAL_PLATFORM=linux/amd64 on Intel/Linux x86_64.
+name: mistraleton-dev
+services:
+  db:
+    platform: ${LOCAL_PLATFORM:-linux/arm64}
+  migrate:
+    image: mistraleton-api:dev
+    platform: ${LOCAL_PLATFORM:-linux/arm64}
+    pull_policy: never
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+  api:
+    image: mistraleton-api:dev
+    platform: ${LOCAL_PLATFORM:-linux/arm64}
+    pull_policy: never
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+  web:
+    image: mistraleton-web:dev
+    platform: ${LOCAL_PLATFORM:-linux/arm64}
+    pull_policy: never
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    environment:
+      SITE_ADDRESS: http://:80
+    ports: !override
+      - "127.0.0.1:8080:80"
+  redis:
+    platform: ${LOCAL_PLATFORM:-linux/arm64}
+  worker:
+    image: mistraleton-api:dev
+    platform: ${LOCAL_PLATFORM:-linux/arm64}
+    pull_policy: never
+    build:
+      context: .
+      dockerfile: backend/Dockerfile

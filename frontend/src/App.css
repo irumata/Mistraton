@@ -1,0 +1,25 @@
+main { width: min(960px, 100%); margin: 0 auto; padding: 32px 40px 24px; }
+header { display: flex; align-items: center; gap: 12px; }
+.brand { display: grid; place-items: center; background: #e2662f; width: 42px; height: 42px; font-size: 22px; font-weight: 800; text-decoration: none; position: relative; }
+.brand span { position: absolute; right: 3px; top: -1px; font-size: 17px; }
+.wordmark { font-weight: 650; font-size: 19px; letter-spacing: -.5px; }
+.intro { padding: 80px 0 40px; }
+.eyebrow { font-size: 11px; letter-spacing: 2px; font-weight: 700; color: #766e5e; }
+h1 { margin: 22px 0; font-size: clamp(38px, 7.5vw, 72px); line-height: 1.08; font-weight: 550; letter-spacing: -3px; }
+h1 em { font-family: Georgia, serif; font-weight: 400; color: #ba4d21; }
+.lede { color: #706c60; max-width: 470px; font-size: 16px; line-height: 1.7; }
+.status-card { background: #fffef9; border: 1px solid #dedacf; border-radius: 14px; padding: 28px; max-width: 600px; }
+.card-top { display: flex; justify-content: space-between; gap: 14px; align-items: center; margin-bottom: 20px; }
+h2 { font-size: 17px; margin: 0; font-weight: 600; }
+.badge { font-size: 11px; padding: 6px 10px; border-radius: 20px; background: #f0ede4; white-space: nowrap; }
+.badge.ready { color: #285e43; background: #e8f0e7; }
+.service { padding: 14px 0; border-top: 1px solid #eae7de; display: flex; justify-content: space-between; gap: 12px; font-size: 14px; }
+.online { color: #2d6445; }
+.online::before { content: ''; display: inline-block; background: #468158; width: 6px; height: 6px; border-radius: 50%; margin-right: 7px; vertical-align: middle; }
+.muted { color: #7e6850; }
+.status-note { color: #797467; font-size: 12px; line-height: 1.5; min-height: 18px; }
+button { display: flex; justify-content: space-between; align-items: center; gap: 28px; border: 0; border-radius: 6px; padding: 11px 15px; background: #282b24; color: white; cursor: pointer; font-size: 12px; margin-top: 20px; }
+button:hover { background: #494c40; }
+button:disabled { opacity: .55; cursor: wait; }
+footer { display: flex; justify-content: space-between; gap: 12px; border-top: 1px solid #ddd8cb; margin-top: 64px; padding-top: 20px; font-size: 11px; color: #817b6f; }
+@media (max-width: 540px) { main { padding: 24px; } .intro { padding-top: 54px; } h1 { letter-spacing: -1.8px; } .status-card { padding: 20px; } .card-top { align-items: flex-start; flex-direction: column; } footer { margin-top: 40px; } }

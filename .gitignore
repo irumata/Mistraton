@@ -1,0 +1,24 @@
+# Credentials and machine-local settings
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*known_hosts*
+*deploy_key*
+*.dump
+backups/
+.preexisting/
+work/
+.DS_Store
+**/node_modules/
+**/dist/
+**/__pycache__/
+**/.pytest_cache/
+**/.venv/
+*.py[cod]
+*.log
+.deploy/
+.deploy.lock
+compose.previous.yaml
