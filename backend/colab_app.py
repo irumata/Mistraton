@@ -20,8 +20,9 @@ One FastAPI app, one port, serving everything the website needs:
 Environment (see sentinel_loop.config.Settings):
   SENTINEL_DATA_DIR, SENTINEL_ARTIFACTS_DIR, MISTRAL_API_KEY, ...
   SENTINEL_DIST_DIR       built frontend dir (default: <repo>/frontend/dist)
-  SENTINEL_API_KEY        if set, mutating endpoints require X-API-Key; the key
-                          is injected into index.html as window.__SENTINEL_KEY__
+  SENTINEL_WEB_USERNAME   browser/CLI login (default safestral)
+  SENTINEL_WEB_PASSWORD   required strong password (at least 32 characters)
+  SENTINEL_PUBLIC_URL     canonical HTTPS origin for same-origin browser requests
   SENTINEL_TIMESTRAL_HF   fine-tuned checkpoint dir (default <artifacts>/timestral-hf)
 
 Run from backend/:  python colab_app.py --host 0.0.0.0 --port 8000
@@ -43,11 +44,12 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+
+from colab_security import ColabAuthMiddleware, web_auth_settings
 
 from sentinel_loop.config import Settings, artifacts_dir_for, db_path_for, resolve_config
 from sentinel_loop.serve.watcher import create_sentinel_router
@@ -101,10 +103,6 @@ def _dist_dir() -> Optional[Path]:
     raw = os.environ.get("SENTINEL_DIST_DIR", "")
     path = Path(raw) if raw else DEFAULT_DIST
     return path if path.is_dir() else None
-
-
-def _api_key() -> str:
-    return os.environ.get("SENTINEL_API_KEY", "")
 
 
 class PipelineRequest(BaseModel):
@@ -162,26 +160,14 @@ def _get_timestral_pipeline():
 
 
 def build_app() -> FastAPI:
+    auth = web_auth_settings()
     settings = _settings()
     app = FastAPI(title="Mistralethon (Colab)", docs_url="/api/docs", redoc_url=None,
                   openapi_url="/api/openapi.json")
 
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],  # same-origin in practice; tunnel fronts everything
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-
-    # Optional shared-secret guard for mutating endpoints (the public tunnel URL
-    # is the real secret; this stops trivial scanners from burning the GPU).
-    @app.middleware("http")
-    async def check_api_key(request: Request, call_next):
-        key = _api_key()
-        if key and request.url.path.startswith(("/sentinel/upload", "/sentinel/pipeline", "/sentinel/timestral", "/sentinel/feedback")):
-            if request.headers.get("x-api-key") != key:
-                return JSONResponse({"detail": "bad api key"}, status_code=401)
-        return await call_next(request)
+    # A whole-app ASGI guard also covers static files, future routes and WS.
+    # Same-origin UI requests use the browser's authenticated HTTP session.
+    app.add_middleware(ColabAuthMiddleware, **auth)
 
     # --- status card endpoints (compatible with the existing React app) ---
     @app.get("/api/health")
@@ -316,21 +302,15 @@ def build_app() -> FastAPI:
         index = dist / "index.html"
 
         def index_html() -> FileResponse:
-            resp = FileResponse(index)
-            key = _api_key()
-            if key and index.exists():
-                html = index.read_text(encoding="utf-8")
-                if "__SENTINEL_KEY__" not in html:
-                    html = html.replace("</head>", f'<script>window.__SENTINEL_KEY__="{key}";</script></head>')
-                tmp = dist / ".index-keyed.html"
-                tmp.write_text(html, encoding="utf-8")
-                resp = FileResponse(tmp)
-            return resp
+            return FileResponse(index)
 
         @app.get("/{full_path:path}", include_in_schema=False)
         def spa(full_path: str):
             # real files in dist root (favicon, etc.) win; everything else -> index.html
-            candidate = dist / full_path
+            candidate = (dist / full_path).resolve()
+            if (not candidate.is_relative_to(dist.resolve())
+                    or any(part.startswith(".") for part in Path(full_path).parts)):
+                raise HTTPException(404, "Not found")
             if full_path and candidate.is_file():
                 return FileResponse(candidate)
             return index_html()
@@ -340,7 +320,7 @@ def build_app() -> FastAPI:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Mistralethon Colab website backend")
-    parser.add_argument("--host", default="0.0.0.0")
+    parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args(argv)
 

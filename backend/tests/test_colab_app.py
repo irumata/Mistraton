@@ -2,9 +2,21 @@
 
 import json
 import time
+import base64
 
 import pytest
+from fastapi import WebSocket
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
+
+LOGIN = ("safestral", "test-only-password-" + "a" * 32)
+
+
+@pytest.fixture(autouse=True)
+def web_login(monkeypatch):
+    monkeypatch.setenv("SENTINEL_WEB_USERNAME", LOGIN[0])
+    monkeypatch.setenv("SENTINEL_WEB_PASSWORD", LOGIN[1])
+    monkeypatch.setenv("SENTINEL_PUBLIC_URL", "https://safestral.dpdns.org")
 
 
 @pytest.fixture()
@@ -18,7 +30,9 @@ def client(tmp_path, monkeypatch):
     monkeypatch.delenv("SENTINEL_TIMESTRAL_HF", raising=False)
     import colab_app
 
-    return TestClient(colab_app.build_app())
+    client = TestClient(colab_app.build_app())
+    client.auth = LOGIN
+    return client
 
 
 RECORD = {
@@ -79,16 +93,123 @@ def test_timestral_chat_503_without_checkpoint(client):
     assert res.status_code == 503
 
 
-def test_api_key_guard(tmp_path, monkeypatch):
-    data_dir = tmp_path / "data2"
-    data_dir.mkdir()
-    monkeypatch.setenv("SENTINEL_DATA_DIR", str(data_dir))
-    monkeypatch.setenv("SENTINEL_API_KEY", "secret")
-    import colab_app
+@pytest.mark.parametrize("path", [
+    "/", "/api/health", "/api/db", "/api/docs", "/api/openapi.json",
+    "/sentinel/health", "/sentinel/data", "/sentinel/alerts", "/sentinel/eval",
+    "/sentinel/pipeline/jobs", "/sentinel/pipeline/jobs/anything",
+    "/assets/app.js", "/favicon.svg", "/unknown-route",
+])
+def test_every_read_requires_authentication(client, path):
+    response = client.get(path, auth=None)
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"].startswith("Basic ")
+    assert response.headers["cache-control"] == "private, no-store"
 
+
+@pytest.mark.parametrize("method,path", [
+    ("POST", "/sentinel/upload"), ("POST", "/sentinel/watch"),
+    ("POST", "/sentinel/feedback"), ("POST", "/sentinel/pipeline/ingest"),
+    ("POST", "/sentinel/timestral/chat"), ("OPTIONS", "/api/health"),
+    ("HEAD", "/api/health"), ("DELETE", "/unknown-route"),
+])
+def test_every_method_requires_authentication(client, method, path):
+    assert client.request(method, path, auth=None).status_code == 401
+
+
+@pytest.mark.parametrize("authorization", [
+    "Basic !!invalid!!", "Bearer anything", "Basic", "Basic " + "x" * 5000,
+    "Basic " + base64.b64encode(b"safestral:wrong-password").decode(),
+], ids=["invalid-base64", "wrong-scheme", "missing-value", "oversized", "wrong-password"])
+def test_invalid_credentials_are_rejected(client, authorization):
+    assert client.get("/api/health", auth=None, headers={"Authorization": authorization}).status_code == 401
+
+
+def test_legacy_key_and_forged_proxy_identity_are_not_credentials(client):
+    response = client.get("/sentinel/data", auth=None, headers={
+        "X-API-Key": "secret", "Cf-Access-Authenticated-User-Email": "owner@example.com",
+        "Cf-Access-Jwt-Assertion": "fake", "X-Forwarded-For": "127.0.0.1",
+    })
+    assert response.status_code == 401
+
+
+def test_password_is_required_even_with_legacy_key(monkeypatch):
+    monkeypatch.delenv("SENTINEL_WEB_PASSWORD")
+    monkeypatch.setenv("SENTINEL_API_KEY", "legacy-key")
+    import colab_app
+    with pytest.raises(RuntimeError, match="SENTINEL_WEB_PASSWORD"):
+        colab_app.build_app()
+
+
+def test_weak_password_fails_startup(monkeypatch):
+    monkeypatch.setenv("SENTINEL_WEB_PASSWORD", "short")
+    import colab_app
+    with pytest.raises(RuntimeError, match="SENTINEL_WEB_PASSWORD"):
+        colab_app.build_app()
+
+
+def test_duplicate_authorization_is_rejected(client):
+    valid = "Basic " + base64.b64encode(":".join(LOGIN).encode()).decode()
+    response = client.get("/api/health", auth=None, headers=[
+        ("Authorization", valid), ("Authorization", valid),
+    ])
+    assert response.status_code == 401
+
+
+def test_cross_site_writes_blocked_even_with_correct_login(client):
+    assert client.post("/sentinel/pipeline/ingest", json={}, headers={"Origin": "https://evil.example"}).status_code == 403
+    assert client.post("/sentinel/pipeline/ingest", json={}, headers={"Sec-Fetch-Site": "cross-site"}).status_code == 403
+    # Same-origin requests reach the endpoint (which rejects the unknown stage).
+    assert client.post("/sentinel/pipeline/unknown", json={}, headers={"Origin": "https://safestral.dpdns.org"}).status_code == 404
+
+
+def test_no_wildcard_cors(client):
+    response = client.get("/api/health", headers={"Origin": "https://evil.example"})
+    assert "access-control-allow-origin" not in response.headers
+
+
+def test_frontend_assets_are_private_and_never_embed_keys(tmp_path, monkeypatch):
+    dist = tmp_path / "dist"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_text("<html><head></head><body>Safestral</body></html>")
+    (dist / "assets/app.js").write_text("console.log('app')")
+    (dist / ".index-keyed.html").write_text("old-secret")
+    (tmp_path / "outside.txt").write_text("private-file")
+    (dist / "outside-link.txt").symlink_to(tmp_path / "outside.txt")
+    monkeypatch.setenv("SENTINEL_DIST_DIR", str(dist))
+    monkeypatch.setenv("SENTINEL_API_KEY", "old-secret")
+    import colab_app
     guarded = TestClient(colab_app.build_app())
-    assert guarded.post("/sentinel/pipeline/ingest", json={}).status_code == 401
-    ok = guarded.post("/sentinel/pipeline/ingest", json={}, headers={"X-API-Key": "secret"})
-    assert ok.status_code == 200
-    # read-only endpoints stay open (the status page must work)
-    assert guarded.get("/api/health").status_code == 200
+    assert guarded.get("/").status_code == 401
+    assert guarded.get("/assets/app.js").status_code == 401
+    html = guarded.get("/", auth=LOGIN)
+    assert html.status_code == 200
+    assert "__SENTINEL_KEY__" not in html.text and "old-secret" not in html.text
+    assert "no-store" in html.headers["cache-control"]
+    assert guarded.get("/assets/app.js", auth=LOGIN).status_code == 200
+    assert guarded.get("/.index-keyed.html", auth=LOGIN).status_code == 404
+    assert guarded.get("/%2e%2e/outside.txt", auth=LOGIN).status_code == 404
+    assert guarded.get("/outside-link.txt", auth=LOGIN).status_code == 404
+
+
+def test_websocket_upgrade_is_guarded(monkeypatch, tmp_path):
+    monkeypatch.setenv("SENTINEL_DATA_DIR", str(tmp_path))
+    import colab_app
+    app = colab_app.build_app()
+
+    @app.websocket("/test-ws")
+    async def ws(socket: WebSocket):
+        await socket.accept()
+        await socket.send_text("authenticated")
+        await socket.close()
+
+    client = TestClient(app)
+    with pytest.raises(WebSocketDisconnect) as denied:
+        with client.websocket_connect("/test-ws"):
+            pass
+    assert denied.value.code == 1008
+    valid = "Basic " + base64.b64encode(":".join(LOGIN).encode()).decode()
+    with pytest.raises(WebSocketDisconnect):
+        with client.websocket_connect("/test-ws", headers={"Authorization": valid, "Origin": "https://evil.example"}):
+            pass
+    with client.websocket_connect("/test-ws", headers={"Authorization": valid, "Origin": "https://safestral.dpdns.org"}) as socket:
+        assert socket.receive_text() == "authenticated"

@@ -1,9 +1,6 @@
-const KEY = typeof window !== 'undefined' ? window.__SENTINEL_KEY__ : undefined
-
 async function request(path, opts = {}) {
   const headers = { ...(opts.headers || {}) }
-  if (KEY) headers['X-API-Key'] = KEY
-  const res = await fetch(path, { cache: 'no-store', ...opts, headers })
+  const res = await fetch(path, { cache: 'no-store', credentials: 'same-origin', ...opts, headers })
   if (!res.ok) {
     let detail = `${res.status}`
     try {
