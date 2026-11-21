@@ -1,0 +1,7 @@
+{
+  "incident_id": "aiid-1687",
+  "timestamp_start": "2026-09-10T00:00:00Z",
+  "timestamp_end": "2026-09-10T01:00:00Z",
+  "severity_hint": "catastrophic risk: weapons cell used AI coding agent for missile guidance software across three weapons programs (MIT harm scale 5 of 5, national security)",
+  "linked_records": ["https://incidentdatabase.ai/cite/1687"]
+}

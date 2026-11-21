@@ -1,0 +1,7 @@
+{
+  "incident_id": "aiid-1625",
+  "timestamp_start": "2026-04-28T00:00:00Z",
+  "timestamp_end": "2026-04-28T01:00:00Z",
+  "severity_hint": "severe: foiled terror plot (Louvre / Jewish community, Paris) with AI-assisted bomb-making research (MIT harm scale 4 of 5, national security)",
+  "linked_records": ["https://incidentdatabase.ai/cite/1625"]
+}

@@ -98,6 +98,24 @@ def test_failed_public_path_closes_the_connector(tunnel_harness):
     assert calls[-1] == "killed"
 
 
+def test_new_tunnel_retries_transient_edge_error_without_skipping_auth_check(tunnel_harness):
+    namespace, calls = tunnel_harness
+    public_data_attempts = []
+
+    def status(url, *, local_login=False):
+        if local_login:
+            return 200
+        if url == "https://safestral.dpdns.org/sentinel/data":
+            public_data_attempts.append(url)
+            return 502 if len(public_data_attempts) == 1 else 401
+        return 401
+
+    namespace["_status"] = status
+    exec(TUNNEL_CELL, namespace)
+    assert len(public_data_attempts) == 2
+    assert "killed" not in calls
+
+
 @pytest.mark.parametrize("env_value,provider_value,expected", [
     ("from-project-env", "from-colab", "from-project-env"),
     ("", "from-colab", "from-colab"),

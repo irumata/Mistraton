@@ -1,0 +1,93 @@
+{
+  "incident_id": "aiid-1361",
+  "incident_summary": "Waymo 5th Generation driverless vehicle reportedly struck an elementary-school child near a Santa Monica school during drop-off hours; NHTSA investigation opened; alleged failures in pedestrian detection, perception, decision-making, and automated braking.",
+  "metric_definitions": [
+    {
+      "name": "api_latency_ms",
+      "source": "metric_export",
+      "aggregation": "max",
+      "expected_normal_range": [
+        "72",
+        "150"
+      ],
+      "observed_bad_range": [
+        "1000",
+        "3313"
+      ],
+      "lead_time_minutes": 4.0,
+      "why_relevant": "Inference latency in the perception/decision stack; a spike to 3313 ms indicates the system was too slow to issue a braking command for the child in the roadway."
+    },
+    {
+      "name": "error_rate",
+      "source": "metric_export",
+      "aggregation": "max",
+      "expected_normal_range": [
+        "0.0006",
+        "0.01"
+      ],
+      "observed_bad_range": [
+        "0.1",
+        "0.3238"
+      ],
+      "lead_time_minutes": 6.0,
+      "why_relevant": "Misclassification rate of the pedestrian detector; an error_rate of 32 % means the system failed to recognize the child as a vulnerable road user, directly causing the collision."
+    }
+  ],
+  "precursor_signals": [
+    {
+      "metric": "error_rate",
+      "pattern": "monotonic rise from 0.01 to >0.1 sustained for 6 minutes before impact",
+      "lead_time_minutes": 6.0
+    },
+    {
+      "metric": "api_latency_ms",
+      "pattern": "sustained latency above 1000 ms with a sharp peak at 3313 ms",
+      "lead_time_minutes": 4.0
+    }
+  ],
+  "timeline": [
+    {
+      "timestamp": "2026-01-23T00:00:00Z",
+      "description": "Monitoring window opens; baseline api_latency_ms ≈72 ms, error_rate ≈0.0006"
+    },
+    {
+      "timestamp": "2026-01-23T00:37:00Z",
+      "description": "Precursor onset: error_rate climbs above 0.05 (6 min before incident)"
+    },
+    {
+      "timestamp": "2026-01-23T00:39:00Z",
+      "description": "api_latency_ms crosses 1000 ms threshold (4 min before incident)"
+    },
+    {
+      "timestamp": "2026-01-23T00:43:00Z",
+      "description": "Incident start: Waymo AV strikes child near elementary school"
+    },
+    {
+      "timestamp": "2026-01-23T00:43:30Z",
+      "description": "Metrics peak: error_rate = 0.3238, api_latency_ms = 3313 ms"
+    },
+    {
+      "timestamp": "2026-01-23T00:50:00Z",
+      "description": "Vehicle stopped, emergency responders on scene, NHTSA notified"
+    },
+    {
+      "timestamp": "2026-01-23T01:00:00Z",
+      "description": "Window closes; federal investigation formally opened"
+    }
+  ],
+  "root_cause_candidates": [
+    "Pedestrian detection system failed to classify the child as human (error_rate spike to 32 %)",
+    "Perception-stack inference latency (3313 ms) delayed emergency braking beyond safe stopping distance",
+    "Decision-making module prioritized trajectory continuation over pedestrian avoidance",
+    "Automated braking system did not engage due to high-latency sensor fusion",
+    "5th Gen Waymo Driver lacked robustness for school-zone drop-off scenarios"
+  ],
+  "prevention_actions": [
+    "Enforce hard latency SLA (e.g., p99 < 200 ms) with automatic safe-stop on breach",
+    "Trigger fail-safe braking whenever error_rate exceeds 0.1 or detection uncertainty is high",
+    "Add redundant LiDAR/radar/camera fusion to mitigate single-sensor misclassification",
+    "Implement geofenced speed limits and enhanced perception sensitivity near schools during drop-off/pickup hours",
+    "Deploy real-time dashboards with automated alerts on error_rate and latency anomalies",
+    "Require adversarial stress-testing in school-zone edge cases before fleet deployment"
+  ]
+}

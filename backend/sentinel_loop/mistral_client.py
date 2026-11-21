@@ -53,20 +53,41 @@ class Transport(Protocol):
     ) -> str: ...
 
 
+def _import_mistral_sdk():
+    """mistralai>=3.8 ships the SDK under `mistralai.client`; older versions export
+    `Mistral` at the package top level. Support both layouts."""
+    try:
+        from mistralai.client import Mistral  # type: ignore
+
+        return Mistral
+    except ImportError:
+        from mistralai import Mistral  # type: ignore
+
+        return Mistral
+
+
 class MistralSdkTransport:
     """Real transport backed by the `mistralai` SDK (created lazily)."""
 
-    def __init__(self, api_key: str):
-        from mistralai import Mistral  # lazy: import only when really calling the API
+    def __init__(self, api_key: str, timeout_ms: int = 300_000):
+        Mistral = _import_mistral_sdk()  # lazy: import only when really calling the API
 
-        self._client = Mistral(api_key=api_key)
+        # Large 4 can think for a while on extraction prompts; give it room.
+        self._client = Mistral(api_key=api_key, timeout_ms=timeout_ms)
 
     def __call__(self, model: str, messages: list[dict], response_format: Optional[dict] = None) -> str:
         kwargs: dict = {"model": model, "messages": messages}
         if response_format:
             kwargs["response_format"] = response_format
         resp = self._client.chat.complete(**kwargs)
-        return resp.choices[0].message.content or ""
+        content = resp.choices[0].message.content
+        if content is None:
+            return ""
+        if isinstance(content, str):
+            return content
+        # mistralai>=3.x returns a list of chunks (TextChunk/ThinkChunk/...)
+        parts = [getattr(ch, "text", "") for ch in content]
+        return "".join(p for p in parts if isinstance(p, str))
 
 
 @dataclass
@@ -102,7 +123,7 @@ class CostLog:
         if self.path:
             Path(self.path).parent.mkdir(parents=True, exist_ok=True)
             with open(self.path, "a", encoding="utf-8") as fh:
-                fh.write(entry.__dict__ | {"ts": time.time()}.__str__().replace("'", '"') + "\n")
+                fh.write(json.dumps({**entry.__dict__, "ts": time.time()}, default=str) + "\n")
         return entry
 
     @property
@@ -182,7 +203,7 @@ class MistralClients:
         return [self.large_extract(system_prompt, p) for p in payloads]
 
     def _large_extract_batch_api(self, system_prompt: str, payloads: list[str]) -> list[str]:
-        from mistralai import Mistral
+        Mistral = _import_mistral_sdk()
 
         client = Mistral(api_key=self.api_key)
         import tempfile

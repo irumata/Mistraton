@@ -1,0 +1,77 @@
+version: 1
+window:
+  length_seconds: 300
+  step_seconds: 60
+  degraded_minutes: 30.0
+  default_lead_time_minutes: 20.0
+metrics:
+- name: response_time_ms
+  source: hf-nginx-logs:metrics/access.csv#response_time_ms
+  sampling_seconds: 60
+  aggregation: raw
+  expected_normal_range:
+  - '0'
+  - '600'
+  observed_bad_range:
+  - '1000'
+  - '5000'
+  lead_time_minutes: 20.0
+  why_relevant: nginx response time from HF mindweave/web-server-logs sample; spikes
+    during injected anomalies
+- name: error_5xx
+  source: hf-nginx-logs:metrics/access.csv#error_5xx
+  sampling_seconds: 60
+  aggregation: raw
+  expected_normal_range:
+  - '0'
+  - '0.1'
+  observed_bad_range:
+  - '0.5'
+  - '1'
+  lead_time_minutes: 20.0
+  why_relevant: 5xx indicator per request; database-outage anomaly shows up here
+- name: api_latency_ms
+  source: metric_export
+  sampling_seconds: 60
+  aggregation: max
+  expected_normal_range:
+  - '50'
+  - '200'
+  observed_bad_range:
+  - '778.3'
+  - '3313'
+  lead_time_minutes: 60.0
+  why_relevant: Elevated API latency during the incident window suggests system degradation
+    that may have delayed safety filtering or intervention responses during critical
+    conversations with the minor.
+- name: error_rate
+  source: metric_export
+  sampling_seconds: 60
+  aggregation: max
+  expected_normal_range:
+  - '0.0001'
+  - '0.01'
+  observed_bad_range:
+  - '0.06797'
+  - '0.3238'
+  lead_time_minutes: 45.0
+  why_relevant: Spiking error rates indicate potential failures in content moderation
+    or safety classification pipelines that should have detected and blocked harmful
+    suicidal content.
+thresholds:
+  band_k: 3.0
+  persistence_windows: 3
+  alert_confidence: 0.7
+  shadow_precision_threshold: 0.8
+  drift_precision_threshold: 0.6
+  min_reviews_for_drift: 5
+timestral:
+  size: 5M
+  backend: local
+chain:
+  verify_with_shieldstral: true
+  suppress_unverified: true
+  explain_with_large: true
+  explanation_max_chars: 4000
+policies_dir: /Users/rumata/Library/CloudStorage/GoogleDrive-nick.knyazev@gmail.com/My
+  Drive/Colab Notebooks/Mistraton/backend/sentinel_loop/policies

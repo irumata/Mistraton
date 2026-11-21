@@ -1,0 +1,17 @@
+[
+  {"ts": "2026-08-03T00:00:00Z", "user": "scheduler_starvation", "text": "保留44件あるのに取りない（{\"market_to_vein\":36,\"vein_seed\":4,\"standing\":4}）/ 繰り返しガード時間で全件対象外"},
+  {"ts": "2026-08-03T00:00:00Z", "user": "process_error", "text": "Command failed: /usr/bin/node ./scripts/strategy-goldmine.js — 2回とも形式を守らない応答だった。錯と"},
+  {"ts": "2026-08-03T00:00:00Z", "user": "language_corruption", "text": "timeout of 600000ms exceeded / ⚠ 日本語が壊れている / 日本語が壊れている"},
+  {"ts": "2026-08-04T00:00:00Z", "user": "process_error", "text": "Command failed: /usr/bin/node ./scripts/consult-case-triage.js — [文書秘書] 判断失敗 → 要判断で資異:"},
+  {"ts": "2026-08-04T00:00:00Z", "user": "process_error", "text": "Command failed: /usr/bin/node ./scripts/consult-case-triage.js"},
+  {"ts": "2026-08-04T00:00:00Z", "user": "language_corruption", "text": "read ECONNRESET / ⚠ 日本語が壊れている / 日本語が壊れている"},
+  {"ts": "2026-08-04T00:00:00Z", "user": "language_corruption", "text": "Request failed with status code 500 | API統合: {\"error\":\"llama-server startup failed after projector CPU offload retry: llama-server process has terminated: exit status 1: cudaMalloc failed: out of memory\\nall_tensor_range: failed to allocate ROCm0 buffer of size 15770974208\\nerror loading model: unable to allocate ROCm0 buffer\"}"},
+  {"ts": "2026-08-04T00:00:00Z", "user": "language_corruption", "text": "Request failed with status code 500 | API統合: llama-server reported out-of-memory during startup: cudaMalloc failed: out of memory (15770974208 bytes ROCm0 buffer)"},
+  {"ts": "2026-08-04T00:00:00Z", "user": "language_corruption", "text": "Request failed with status code 500 | llama-server startup failed before projector CPU offload retry: out of memory; error stopping failed process: TerminateProcess: Access is denied."},
+  {"ts": "2026-08-04T00:00:00Z", "user": "contract_violation", "text": "契約を満たせなかった（market_to_vein/外の需要と突き合わぬ: 生成AI導入でセ）"},
+  {"ts": "2026-08-04T00:00:00Z", "user": "contract_violation", "text": "契約を満たせなかった（market_to_vein/外の需要と突き合わぬ: 生成AI導入を検）"},
+  {"ts": "2026-08-04T00:00:00Z", "user": "contract_violation", "text": "契約を満たせなかった（vein_seed/金脈の種: AI組織13ユ月・67,1）"},
+  {"ts": "2026-08-04T00:00:00Z", "user": "contract_violation", "text": "契約を満たせなかった（market_to_vein/外の需要と突き合わぬ: 生成AI後、現場）"},
+  {"ts": "2026-08-04T00:00:00Z", "user": "contract_violation", "text": "契約を満たせなかった（market_to_vein/外の需要と突き合わぬ: データドリブン経）"},
+  {"ts": "2026-08-04T00:00:00Z", "user": "contract_violation", "text": "契約を満たせなかった（market_to_vein/外の需要と突き合わぬ: 情報教育に悪影響中）"}
+]

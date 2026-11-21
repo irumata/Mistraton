@@ -62,7 +62,8 @@ def cmd_extract_metrics(args) -> int:
     data_dir = _data_dir(args)
     config, _ = resolve_config(data_dir, args.config)
     clients = _clients(Settings())
-    outputs = extract_all(data_dir, clients, config)
+    outputs = extract_all(data_dir, clients, config, incident_ids=args.incident,
+                          use_batch=not args.no_batch)
     print(f"extracted metrics for {len(outputs)} incidents -> {data_dir / 'metrics.yaml'}")
     for o in outputs:
         print(f"  - {o.incident_id}: {len(o.metric_definitions)} metric definitions, "
@@ -77,7 +78,8 @@ def cmd_label_windows(args) -> int:
     config, _ = resolve_config(data_dir, args.config)
     settings = Settings()
     clients = _clients(settings) if settings.mistral_api_key else None
-    windows = label_all_windows(data_dir, db_path_for(settings), config, clients)
+    windows = label_all_windows(data_dir, db_path_for(settings), config, clients, incident_ids=args.incident,
+                                max_windows_per_metric=args.max_windows)
     n_val = sum(1 for w in windows if w.validated)
     print(f"labeled {len(windows)} windows ({n_val} shieldstral-validated) -> {db_path_for(settings)}")
     return 0
@@ -268,10 +270,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("extract-metrics", help="Mistral Large metric extraction -> metrics.yaml")
     _add_common(p)
+    p.add_argument("--incident", nargs="*", default=None, help="limit extraction to these incident ids")
+    p.add_argument("--no-batch", action="store_true", help="use sequential chat calls instead of the Batch API")
     p.set_defaults(func=cmd_extract_metrics)
 
     p = sub.add_parser("label-windows", help="Shieldstral window labeling -> labeling store")
     _add_common(p)
+    p.add_argument("--incident", nargs="*", default=None, help="limit labeling to these incident ids")
+    p.add_argument("--max-windows", type=int, default=None, help="cap windows labeled per incident+metric")
     p.set_defaults(func=cmd_label_windows)
 
     p = sub.add_parser("build-dataset", help="assemble detection/forecasting sets + splits")

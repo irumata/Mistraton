@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { api, uploadForm } from '../api.js'
+import { api, apiPost, uploadForm } from '../api.js'
 
 export default function UploadPanel() {
   const [incidentId, setIncidentId] = useState('incident-001')

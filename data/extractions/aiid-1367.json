@@ -1,0 +1,79 @@
+{
+  "incident_id": "aiid-1367",
+  "incident_summary": "Spokane Transit Authority double-decker bus routed by onboard CAD/navigation system onto Cedar Street low-clearance railroad viaduct, shearing the upper deck; 7 of 10 aboard hospitalized with non-life-threatening injuries. Classified under MIT risk subdomain 7.3 'Lack of capability or robustness' with harm scale 4/5.",
+  "metric_definitions": [
+    {
+      "name": "api_latency_ms",
+      "source": "metric_export (STA onboard CAD routing API)",
+      "aggregation": "max over 1-minute buckets",
+      "expected_normal_range": [
+        "72.12",
+        "150.0"
+      ],
+      "observed_bad_range": [
+        "3000",
+        "3313"
+      ],
+      "lead_time_minutes": 38.0,
+      "why_relevant": "Sustained API latency >3s indicates degraded route-calculation performance, preceding the generation of a clearance-ignorant route to the viaduct."
+    },
+    {
+      "name": "error_rate",
+      "source": "metric_export (navigation routing service)",
+      "aggregation": "max over 5-minute window",
+      "expected_normal_range": [
+        "0.00061",
+        "0.0015"
+      ],
+      "observed_bad_range": [
+        "0.3000",
+        "0.3238"
+      ],
+      "lead_time_minutes": 42.0,
+      "why_relevant": "Error rate spike to >30% signals repeated routing failures and fallback to incomplete map data lacking bridge-height constraints, directly enabling the unsafe routing decision."
+    }
+  ],
+  "precursor_signals": [
+    {
+      "metric": "api_latency_ms",
+      "pattern": "sustained latency > 1000ms for consecutive samples (>5 min)",
+      "lead_time_minutes": 38.0
+    },
+    {
+      "metric": "error_rate",
+      "pattern": "error_rate > 0.10 (10%) for >=3 consecutive samples",
+      "lead_time_minutes": 42.0
+    }
+  ],
+  "timeline": [
+    {
+      "timestamp": "2026-01-18T00:18:00Z",
+      "description": "Precursor onset: error_rate spikes from baseline 0.0006 to >0.30 as routing service begins failing"
+    },
+    {
+      "timestamp": "2026-01-18T00:22:00Z",
+      "description": "api_latency_ms climbs from ~80ms baseline to >1000ms, indicating route computation degradation"
+    },
+    {
+      "timestamp": "2026-01-18T00:45:00Z",
+      "description": "CAD system finalizes route via Cedar Street railroad viaduct without validating double-decker height clearance"
+    },
+    {
+      "timestamp": "2026-01-18T01:00:00Z",
+      "description": "Incident impact: bus strikes low-clearance viaduct, upper deck sheared, 7 passengers hospitalized"
+    }
+  ],
+  "root_cause_candidates": [
+    "CAD routing algorithm lacked vehicle-specific height profile constraint for double-decker buses (lack of capability)",
+    "Map database missing or stale low-clearance geofence data for Cedar Street railroad viaduct",
+    "High error_rate and api_latency_ms caused fallback to unvalidated generic heavy-vehicle route ignoring vertical clearance",
+    "Insufficient robustness testing of navigation system against real-world infrastructure edge cases (MIT taxonomy 7.3)"
+  ],
+  "prevention_actions": [
+    "Mandate hard-coded vehicle height/width/axle profiles in all transit CAD routing engines with bridge-clearance validation",
+    "Implement real-time geofencing and automatic route blocking for low-clearance structures based on live map data",
+    "Add human-in-the-loop confirmation for double-decker routes within 500m of known hazard zones",
+    "Deploy automated SLO alerting on api_latency_ms > 500ms and error_rate > 0.05 to trigger immediate route recalculation or navigation service suspension",
+    "Conduct adversarial red-team robustness testing of routing AI against infrastructure edge cases prior to deployment and after map updates"
+  ]
+}

@@ -46,6 +46,7 @@ import sys
 import threading
 import time
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
@@ -57,6 +58,8 @@ from pydantic import BaseModel
 from colab_security import ColabAuthMiddleware, web_auth_settings
 
 from sentinel_loop.config import Settings, artifacts_dir_for, db_path_for, resolve_config
+from sentinel_loop.serve.investigation import create_investigation_router, investigation_runs
+from sentinel_loop.serve.voice import create_voice_router
 from sentinel_loop.serve.watcher import create_sentinel_router
 
 logger = logging.getLogger(__name__)
@@ -173,8 +176,17 @@ def _get_timestral_pipeline():
 def build_app() -> FastAPI:
     auth = web_auth_settings()
     settings = _settings()
+    runs = investigation_runs(settings.mistral_api_key)
+
+    @asynccontextmanager
+    async def lifespan(_app):
+        try:
+            yield
+        finally:
+            runs.close()
+
     app = FastAPI(title="Mistralethon (Colab)", docs_url="/api/docs", redoc_url=None,
-                  openapi_url="/api/openapi.json")
+                  openapi_url="/api/openapi.json", lifespan=lifespan)
 
     # A whole-app ASGI guard also covers static files, future routes and WS.
     # Same-origin UI requests use the browser's authenticated HTTP session.
@@ -195,6 +207,8 @@ def build_app() -> FastAPI:
 
     # --- existing Sentinel-Loop watcher (health/watch/feedback/alerts) ---
     app.include_router(create_sentinel_router(settings=settings), prefix="/sentinel", tags=["sentinel-loop"])
+    app.include_router(create_investigation_router(runs), prefix="/sentinel", tags=["investigations"])
+    app.include_router(create_voice_router(runs, settings.mistral_api_key), prefix="/sentinel", tags=["incident voice"])
 
     # --- upload incident bundles ---
     @app.post("/sentinel/upload")

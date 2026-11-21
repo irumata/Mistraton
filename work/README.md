@@ -28,9 +28,34 @@ files, `metrics/*.csv`).
   scaled by severity hint; deterministic seeds). Re-run idempotently.
 
 ## Derived artifacts (NOT committed — regenerate)
-`labels.db`, `dataset/`, `artifacts/` are pipeline outputs. Regenerate from
-`backend/` with `SENTINEL_DATA_DIR=../work`:
+`labels.db`, `dataset/`, `artifacts/`, `extractions/`, `archive/`, `cost_log.jsonl`
+are pipeline outputs. Regenerate from `backend/` with `SENTINEL_DATA_DIR=../work`:
 `ingest -> label-windows -> build-dataset -> train-detection/-embedding-head/-zero-shot -> evaluate -> forecast`.
+
+## Archive + demo flow (website / CLI)
+```bash
+# 1. package this folder into a portable, hash-verified archive
+python -m sentinel_loop prepare-archive --src ../work        # -> <data-dir>/archive/*.zip
+#    (website: POST /sentinel/archive/prepare, GET /sentinel/archive/download?name=...)
+
+# 2. on the target host: download + apply the archive, then let Mistral Large 4
+#    analyze the bundles and write the metric contract (metrics.yaml)
+python -m sentinel_loop apply-archive                        # verify sha256, extract to raw/, ingest
+#    (website: POST /sentinel/archive/upload)
+python -m sentinel_loop extract-metrics --no-batch           # mistral-large-4 per incident (Batch API default)
+
+# 3. Shieldstral labels/validates windows (+ PII filtering)
+python -m sentinel_loop label-windows                        # all incidents (offline PII fallback)
+python -m sentinel_loop label-windows --incident aiid-1492 --max-windows 40   # with API: real validation
+
+# 4. Timestral is fitted into the detector
+python -m sentinel_loop build-dataset && python -m sentinel_loop train-detection && python -m sentinel_loop evaluate
+
+# 5. demo: replay a stored incident through the live chain (timestral -> shieldstral -> large)
+python -m sentinel_loop demo --incident aiid-1492 --no-shadow --scope incident --max-windows 40
+python -m sentinel_loop demo --incident aiid-1361 --no-shadow --scope full   # hard negative gets suppressed
+#    (website: Watch tab -> "Run demo", or POST /sentinel/demo)
+```
 
 ## Caveats
 - AIID incident dates are date-granular; `record.json` timestamps use T00:00Z,

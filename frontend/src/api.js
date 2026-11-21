@@ -5,9 +5,10 @@ async function request(path, opts = {}) {
     let detail = `${res.status}`
     try {
       const body = await res.json()
-      detail = body.detail || detail
+      if (typeof body.detail === 'string') detail = body.detail
+      if (Array.isArray(body.detail)) detail = body.detail.map(issue => issue.msg).join(', ')
     } catch { /* keep status */ }
-    throw new Error(`Request failed (${detail})`)
+    throw Object.assign(new Error(`Request failed (${detail})`), { status: res.status })
   }
   return res.json()
 }

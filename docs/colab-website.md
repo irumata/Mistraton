@@ -48,6 +48,80 @@ availability still depends on the Colab runtime being online.
 6. Open `https://safestral.dpdns.org`. The browser asks for username
    `safestral` (editable as `WEB_USERNAME`) and your chosen password.
 
+## Walk through an investigation
+
+1. On the homepage, select **Try a sample replay** to see the workflow using
+   synthetic gateway metrics. Select **View monitor and decisions** to see the
+   metric sources and rule, then **Replay observations** to watch the two candidate episodes
+   appear. The sample runs in the browser without model credentials.
+2. For your own incident, select a GPU runtime for Shieldstral in Colab. Set
+   `MISTRAL_API_KEY` and `HUGGINGFACE_TOKEN` in the project `.env`. The Hugging
+   Face token needs read access to `mistralai/Shieldstral-1.0-3B`. Run the
+   notebook from the top to install the models and rebuild the site.
+3. Select **Upload an incident** and choose a ZIP, timestamped CSV, access log,
+   or text report. Use **Add supporting data or context** for up to eight extra
+   files and an optional question. CSVs can use `timestamp,value` or separate
+   columns for multiple metrics. ISO 8601 timestamps can include fractional
+   seconds. If a download contains separate incident ZIPs, extract it and
+   choose one incident ZIP. The limit is 20 MB combined and 64 MB unpacked.
+   Set **Shieldstral candidate threshold** if you want a cutoff other than the
+   default of 0.1, then select **Build monitor**.
+4. **Metrics found** lists the source file and field for each series and marks
+   Le Chonk’s choice. **Shieldstral baseline check** shows whether the early
+   evidence was accepted and how that affected the Timestral band. Under
+   **Episode decisions**, compare the measured departure, Shieldstral’s yes/no
+   verdict, and Large 4’s assessment of episodes that pass Shieldstral. Large 4
+   considers plausible explanations and suggests a check that could distinguish
+   them. Each detected episode stays visible with the checks it reached. If the evidence
+   has only a report, the run can recommend instrumentation. A detector
+   requires at least 16 populated time intervals for the selected metric.
+5. In a completed replay with scored episodes, edit **Shieldstral candidate
+   threshold** and select **Apply threshold**. The replay reuses the saved
+   scores and Large 4 reviews. Newly passing episodes are sent to Large 4.
+   Baseline calibration uses its own 0.5 cutoff.
+6. **Evidence used** shows the files and upload fingerprint. Each browser tab
+   has independent access to its run, including after a reload. Results
+   expire within an hour and when the Colab runtime restarts.
+
+For a model-backed sample, download `/sentinel/investigations/sample` from the
+authenticated site and use the ZIP as the incident file. It contains the public
+nginx sample in `work/` and its timestamped metric export.
+
+Select **Analyze Hugging Face’s July timeline** under **Build a monitor** to
+review five published UTC daily totals from the July 2026 intrusion and get a
+Large 4 monitoring plan. The first and last days are partial. The run displays
+the original counts and skips forecasting. The CSV lives in
+`work/public/hugging-face-july-2026/`.
+
+Timestral 5M is the default. Set `SENTINEL_TIMESTRAL_SIZE=28M` before starting
+the notebook to use 28M. Each run calibrates separately with shared model
+weights. The first run downloads the model weights when the cache is empty.
+Large 4 receives the investigation question, measured summaries, and limited
+redacted excerpts of supporting text. Shieldstral and Timestral run in Colab.
+
+## Try the incident voice demo
+
+1. Set `MISTRAL_API_KEY` in the project `.env` and run the Colab website notebook.
+   The voice demo uses the hosted Voxtral and Large 4 APIs, so the published
+   timeline demo also works on a CPU runtime.
+2. On the homepage, select **Try the voice demo** and then **Start voice briefing**.
+   Safestral reads a briefing based on Hugging Face’s published July 2026
+   incident timeline. If your browser blocks automatic audio, select **Play**
+   on the player.
+3. Select **Ask with microphone**, allow browser microphone access, ask a question,
+   then select **Stop and send**. Try “Which day had the most recovered actions?”
+   or “Can we use this data to test early warning?” Recordings stop after 25
+   seconds. The typed input works without microphone access.
+4. For your own upload, select **Open this incident’s voice briefing** from
+   the investigation results. The briefing uses that run’s evidence, redacted
+   excerpts, and available monitoring results. If the run expires, build the
+   monitor again.
+
+Voxtral transcribes the recording and reads Large 4’s answer aloud. Safestral
+sends recordings and questions to Mistral for processing. The page shows the
+briefing, each transcription, and each answer in text, even if playback is
+unavailable. Microphone access requires the HTTPS site or a localhost preview.
+
 ## Authentication coverage
 
 `backend/colab_security.py` is an ASGI guard around the whole Colab app.

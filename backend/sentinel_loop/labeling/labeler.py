@@ -71,6 +71,7 @@ def label_for_incident(
     store: LabelingStore,
     clients: MistralClients | None = None,
     policies_dir: str | Path | None = None,
+    max_windows: int | None = None,
 ) -> list[LabelledWindow]:
     policies_dir = Path(policies_dir or config.policies_dir)
     labeling_policy = load_policy(policies_dir, "labeling_policy.yaml")
@@ -110,6 +111,8 @@ def label_for_incident(
             policy_version=policy_version, validated=validated,
         ))
         t += step
+        if max_windows is not None and len(windows) >= max_windows:
+            break
     store.save_windows(windows)
     return windows
 
@@ -119,15 +122,21 @@ def label_all_windows(
     db_path: str | Path,
     config: MetricsConfig,
     clients: MistralClients | None = None,
+    incident_ids: list[str] | None = None,
+    max_windows_per_metric: int | None = None,
 ) -> list[LabelledWindow]:
     data_dir = Path(data_dir)
     records = load_records(data_dir / "records.jsonl")
+    if incident_ids:
+        wanted = set(incident_ids)
+        records = [r for r in records if r.incident_id in wanted]
     store = LabelingStore(db_path)
     all_windows: list[LabelledWindow] = []
     for record in records:
         for metric in config.metrics:
             all_windows.extend(
-                label_for_incident(record, metric.name, config, store, clients, config.policies_dir)
+                label_for_incident(record, metric.name, config, store, clients, config.policies_dir,
+                                   max_windows=max_windows_per_metric)
             )
     logger.info("labeled %d windows across %d incidents", len(all_windows), len(records))
     return all_windows

@@ -20,8 +20,9 @@ from .strategies import (STRATEGIES, BaseDetector, EmbeddingHeadDetector, Foreca
 
 
 def _series_and_mask(data_dir: Path, config: MetricsConfig, incident_ids: list[str]):
-    """Reconstruct aligned per-metric series restricted to given incidents, plus
-    a normal mask (True where the point falls outside any incident/lead/degraded zone)."""
+    """Reconstruct aligned per-metric series, plus a normal mask (True where the
+    point falls outside ANY incident's lead/incident/degraded zone — held-out
+    test incidents must not pollute the normal statistics either)."""
     from datetime import timedelta
 
     from ..ingest.loader import load_records
@@ -36,17 +37,12 @@ def _series_and_mask(data_dir: Path, config: MetricsConfig, incident_ids: list[s
             continue
         grid, values = resample_series(points, m.sampling_seconds)
         series[m.name] = [(ts, v) for ts, v in zip(grid, values)]
+        lead = timedelta(minutes=config.lead_time_minutes(m.name))
+        deg = timedelta(minutes=config.window.degraded_minutes)
         flags = []
         for ts in grid:
             normal = True
-            for iid in incident_ids:
-                r = records.get(iid)
-                if not r:
-                    continue
-                from datetime import timedelta as td
-
-                lead = td(minutes=config.lead_time_minutes(m.name))
-                deg = td(minutes=config.window.degraded_minutes)
+            for r in records.values():  # mask out every incident zone, not just train
                 if r.timestamp_start - lead <= ts < r.timestamp_end + deg:
                     normal = False
                     break

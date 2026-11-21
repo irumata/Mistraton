@@ -10,7 +10,8 @@
 *.dump
 backups/
 .preexisting/
-work/
+work/*
+!work/public/
 .DS_Store
 **/node_modules/
 **/dist/

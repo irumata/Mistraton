@@ -1,0 +1,103 @@
+.voice-panel {
+  margin-block: 52px;
+  scroll-margin-top: 24px;
+}
+
+.voice-panel h2 {
+  margin: 0;
+  font-size: clamp(1.65rem, 3vw, 2.2rem);
+  letter-spacing: -.035em;
+}
+
+.voice-card {
+  max-width: 740px;
+  display: grid;
+  justify-items: start;
+  gap: 12px;
+}
+
+.voice-source {
+  display: grid;
+  width: min(100%, 440px);
+  gap: 6px;
+  font-weight: 650;
+}
+
+.voice-source select, .voice-question input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #aeb6ad;
+  border-radius: 6px;
+  padding: 10px 12px;
+  background: #fff;
+  color: inherit;
+  font: inherit;
+}
+
+.voice-status, .voice-privacy {
+  margin: 0;
+}
+
+.voice-status:empty {
+  display: none;
+}
+
+.voice-transcript {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+}
+
+.voice-message {
+  padding: 11px 14px;
+  border-radius: 8px;
+  background: #f0f3ed;
+  overflow-wrap: anywhere;
+}
+
+.voice-message strong {
+  font-size: .82rem;
+}
+
+.voice-message p {
+  margin: 3px 0;
+  line-height: 1.5;
+}
+
+.voice-turn {
+  display: grid;
+  gap: 6px;
+}
+
+.voice-operator {
+  justify-self: end;
+  max-width: 90%;
+  background: #f6f1e8;
+}
+
+.voice-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.voice-recording-button {
+  border: 1px solid #a1241d;
+  border-radius: 6px;
+  padding: 10px 14px;
+  background: #a1241d;
+  color: #fff;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.voice-question {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+.voice-card audio {
+  width: min(100%, 420px);
+}

@@ -169,7 +169,8 @@ def run_demo(
                         store.save_alert(res.alert)
                     inc_report["alerts"].append(res.alert)
                     all_alerts.append(res.alert)
-                inc_report["chains"].append(res)
+                if res.event is not None:  # trace only windows that produced a candidate
+                    inc_report["chains"].append(res)
             inc_report["metrics"].append(name)
         inc_report["chains"] = [c.model_dump(mode="json") for c in inc_report["chains"]]
         inc_report["alerts"] = [a.model_dump(mode="json") for a in inc_report["alerts"]]

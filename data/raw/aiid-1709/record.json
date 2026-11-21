@@ -1,0 +1,7 @@
+{
+  "incident_id": "aiid-1709",
+  "timestamp_start": "2026-07-29T00:00:00Z",
+  "timestamp_end": "2026-07-29T01:00:00Z",
+  "severity_hint": "severe: critical energy infrastructure run without permits — 62 unpermitted 2,000-kW gas generators at an AI data center; $1.07M fine, public-health/air-quality harm (MIT harm scale 4 of 5)",
+  "linked_records": ["https://incidentdatabase.ai/cite/1709"]
+}

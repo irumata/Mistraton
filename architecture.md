@@ -153,6 +153,20 @@ python -m sentinel_loop ingest | extract-metrics | label-windows | build-dataset
 
 ## 8. Web interface (pixelated Mistral style)
 
+The Colab **Investigate** home screen accepts a ZIP from the browser and runs a
+separate archive-analysis workflow. Large 4 chooses a measured signal and
+proposes how to monitor it. Shieldstral checks the early baseline, Timestral
+forecasts later observations, Shieldstral verifies candidate episodes, and a
+fresh Large 4 request independently reviews and explains the strongest candidates.
+An alert needs both reviewers to support it. The run
+reports skipped stages when measurements or candidates are unavailable.
+
+Every run has a separate capability key and in-memory evidence, baseline,
+progress, and results. Model weights are shared and read-only. A worker pool
+limits concurrent jobs and individual model locks protect loaded inference
+instances. Uploaded ZIPs are read in memory, and the result carries the SHA-256
+of the bytes received over HTTP.
+
 `frontend/` (React + Vite) is the operator console, served next to the API and talking
 to the `/sentinel/*` endpoints mounted by `backend/colab_app.py`:
 

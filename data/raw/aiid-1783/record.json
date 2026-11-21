@@ -1,0 +1,7 @@
+{
+  "incident_id": "aiid-1783",
+  "timestamp_start": "2026-04-22T00:00:00Z",
+  "timestamp_end": "2026-04-22T01:00:00Z",
+  "severity_hint": "catastrophic: death of a 15-year-old (MIT harm scale 5 of 5, psychological/physical harm)",
+  "linked_records": ["https://incidentdatabase.ai/cite/1783"]
+}

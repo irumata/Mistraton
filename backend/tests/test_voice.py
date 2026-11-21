@@ -1,0 +1,130 @@
+"""Regression tests for the incident briefing and private voice context."""
+
+import base64
+
+import httpx
+import pytest
+from fastapi.testclient import TestClient
+
+import colab_app
+from sentinel_loop.serve import voice
+from sentinel_loop.serve.investigation import InvestigationRuns
+
+LOGIN = ('safestral', 'temporary-voice-test-password' + 'x' * 32)
+PATH = '/sentinel/voice'
+RUN_KEY_HEADER = 'X-Safestral-Run-Key'
+
+
+class Models:
+    large_model = 'mistral-large-4-0'
+    shield_model = 'test-shield'
+    timestral_model = 'test-timestral'
+
+    def __init__(self):
+        self.prompts = []
+
+    def large_json(self, _instructions, evidence, **_options):
+        if 'incident_evidence' not in evidence:
+            return {'metric_id': None, 'summary': 'Review the incident report.', 'reason': 'Latency increased.',
+                    'monitoring': 'Collect latency measurements.'}
+        self.prompts.append(evidence)
+        return {'answer': 'Here is what the supplied evidence shows.'}
+
+
+@pytest.fixture
+def website(monkeypatch):
+    monkeypatch.setenv('SENTINEL_WEB_USERNAME', LOGIN[0])
+    monkeypatch.setenv('SENTINEL_WEB_PASSWORD', LOGIN[1])
+    monkeypatch.setenv('MISTRAL_API_KEY', 'test-key')
+    monkeypatch.delenv('SENTINEL_PUBLIC_URL', raising=False)
+    models = Models()
+    runs = InvestigationRuns(models)
+    monkeypatch.setattr(colab_app, 'investigation_runs', lambda _key: runs)
+    calls = []
+
+    def audio_request(url, **options):
+        calls.append(options)
+        request = httpx.Request('POST', url)
+        if url.endswith('/transcriptions'):
+            return httpx.Response(200, request=request, json={'text': ' What happened on July 11? '})
+        return httpx.Response(200, request=request, json={'audio_data': base64.b64encode(b'mp3 bytes').decode()})
+
+    monkeypatch.setattr(voice.httpx, 'post', audio_request)
+    with TestClient(colab_app.build_app()) as client:
+        yield client, models, calls
+
+
+def test_public_briefing_and_recorded_question(website):
+    client, models, calls = website
+    assert client.post(f'{PATH}/briefing', json={}).status_code == 401
+    client.auth = LOGIN
+    assert client.post(f'{PATH}/briefing', json={}, headers={'Origin': 'https://other.example'}).status_code == 403
+    briefing = client.post(f'{PATH}/briefing', json={})
+    assert briefing.status_code == 200
+    assert '17,613' in briefing.json()['briefing']
+    assert '7,677' in briefing.json()['briefing']
+    assert briefing.json()['source_url'].startswith('https://huggingface.co/')
+    assert base64.b64decode(briefing.json()['audio']) == b'mp3 bytes'
+    assert calls[0]['json']['model'] == voice.SPEECH_MODEL
+
+    result = client.post(f'{PATH}/questions', files={'audio': ('question.webm', b'recording', 'audio/webm')},
+                         data={'history': '[{"question":"What incident?","answer":"The July incident."}]'})
+    assert result.status_code == 200
+    assert result.json()['question'] == 'What happened on July 11?'
+    assert calls[1]['data']['model'] == voice.TRANSCRIPTION_MODEL
+    assert calls[1]['files']['file'] == ('question.webm', b'recording', 'audio/webm')
+    prompt = models.prompts[0]
+    assert prompt['prior_turns'][0]['question'] == 'What incident?'
+    assert {'date': '2026-07-11', 'actions': 7677} in prompt['incident_evidence']['published_activity']
+    assert calls[2]['json']['input'] == result.json()['answer']
+
+
+def test_uploaded_voice_context_requires_the_run_key_and_keeps_excerpts_private(website):
+    client, models, calls = website
+    client.auth = LOGIN
+    response = client.post('/sentinel/investigations', files={
+        'file': ('incident.md', b'Upstream timed out at 14:10. Contact operator@example.org.', 'text/markdown'),
+    })
+    assert response.status_code == 202
+    run = response.json()
+    run_path = f"/sentinel/investigations/{run['id']}"
+    headers = {RUN_KEY_HEADER: run['key']}
+    assert client.post(f'{PATH}/briefing', json={'run_id': run['id']}).status_code == 404
+    assert client.post(f'{PATH}/questions', data={'run_id': run['id'], 'question': 'What happened?'},
+                       headers={RUN_KEY_HEADER: 'wrong'}).status_code == 404
+    assert not calls
+
+    import time
+
+    for _ in range(100):
+        view = client.get(run_path, headers=headers).json()
+        if view['status'] == 'complete':
+            break
+        time.sleep(.01)
+    assert view['status'] == 'complete'
+    assert 'Upstream timed out' not in str(view)
+    result = client.post(f'{PATH}/questions', data={'run_id': run['id'], 'question': 'What happened?'},
+                         headers=headers)
+    assert result.status_code == 200
+    assert models.prompts[0]['incident_evidence']['file_excerpts'] == [
+        {'file': 'incident.md', 'text': 'Upstream timed out at 14:10. Contact [EMAIL].'},
+    ]
+
+
+def test_voice_rejects_invalid_input_and_keeps_the_text_when_playback_fails(website, monkeypatch):
+    client, models, calls = website
+    client.auth = LOGIN
+    result = client.post(f'{PATH}/questions', files={'audio': ('x.txt', b'a', 'text/plain')})
+    assert result.status_code == 415
+    result = client.post(f'{PATH}/questions', files={'audio': ('x.mp4', b'a' * (voice.MAX_AUDIO_BYTES + 1), 'audio/mp4')})
+    assert result.status_code == 413
+    assert client.post(f'{PATH}/questions', data={'question': 'Hello', 'history': '{}'}).status_code == 422
+    assert not calls and not models.prompts
+
+    def timeout(*_args, **_kwargs):
+        raise httpx.ReadTimeout('test timeout')
+
+    monkeypatch.setattr(voice.httpx, 'post', timeout)
+    result = client.post(f'{PATH}/questions', data={'question': 'What happened?'})
+    assert result.status_code == 200
+    assert 'answer' in result.json() and 'audio_warning' in result.json()

@@ -64,10 +64,15 @@ From `backend/` with the repo `.venv` active:
 # 0. generate the synthetic incident set (2 metrics + 2 incidents)
 python -m sentinel_loop.examples.synthetic --out data/raw
 
+# 0b. input data archives: package a work/ dir, move it to another host, apply it
+python -m sentinel_loop prepare-archive --src ../work            # -> <data-dir>/archive/*.zip (sha256 manifest)
+python -m sentinel_loop apply-archive --archive <...>.zip        # verify + extract into raw/ + ingest
+
 # 1..4 offline-capable stages (extract/label need MISTRAL_API_KEY)
 python -m sentinel_loop ingest            --data-dir data
 python -m sentinel_loop extract-metrics   --data-dir data   # Mistral Large, Batch API
 python -m sentinel_loop label-windows     --data-dir data   # Shieldstral validation + PII
+python -m sentinel_loop label-windows     --data-dir data --incident aiid-1492 hf-nginx-logs  # subset
 python -m sentinel_loop build-dataset     --data-dir data
 
 # 5..6 train + evaluate (self-hosted Timestral side; held-out incidents only for eval)
@@ -82,7 +87,17 @@ python -m sentinel_loop shadow-run  --data-dir data --strategy forecasting
 
 # 8. issue forecasting: multi-step forecast + first expected band breach (lead time)
 python -m sentinel_loop forecast    --data-dir data --strategy forecasting --steps 12
+
+# 9. demo: replay a stored incident bundle through the live chain
+python -m sentinel_loop demo --data-dir data --incident aiid-1492 --scope incident --max-windows 60
+python -m sentinel_loop demo --data-dir data --scope full --no-shadow   # full series, real Shieldstral gate
 ```
+
+The same demo is exposed to the website as `POST /sentinel/demo`
+(`{incident_id?, metrics?, strategy?, shadow?, max_windows?, window_scope?}`) — the Watch tab
+has a "Run demo" card; archives are managed via `POST /sentinel/archive/prepare`,
+`GET /sentinel/archive`, `GET /sentinel/archive/download?name=…` and `POST /sentinel/archive/upload`
+(see `backend/colab_app.py`).
 
 The watcher is also mounted into the live website app under `/sentinel/*`
 (`POST /sentinel/watch`, `POST /sentinel/forecast`, `POST /sentinel/feedback`,

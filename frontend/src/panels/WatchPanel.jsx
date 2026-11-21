@@ -80,15 +80,36 @@ export default function WatchPanel() {
   const [res, setRes] = useState(null)
   const [alerts, setAlerts] = useState([])
   const [error, setError] = useState('')
+  const [incidents, setIncidents] = useState([])
+  const [demoIncident, setDemoIncident] = useState('')
+  const [demoScope, setDemoScope] = useState('incident')
+  const [demoMax, setDemoMax] = useState(80)
+  const [demoRes, setDemoRes] = useState(null)
+  const [demoBusy, setDemoBusy] = useState(false)
 
   async function refresh() {
     try {
       const d = await api('/sentinel/data')
       setMetrics(d.metrics)
       if (!metric && d.metrics.length) setMetric(d.metrics[0])
+      setIncidents(d.records.map(r => r.incident_id))
       const a = await api('/sentinel/alerts')
       setAlerts(a.alerts)
     } catch (e) { setError(e.message) }
+  }
+
+  async function runDemo() {
+    setDemoBusy(true); setError(''); setDemoRes(null)
+    try {
+      const r = await apiPost('/sentinel/demo', {
+        incident_id: demoIncident || null,
+        shadow,
+        max_windows: demoMax,
+        window_scope: demoScope,
+      })
+      setDemoRes(r)
+      await refresh()
+    } catch (e) { setError(e.message) } finally { setDemoBusy(false) }
   }
 
   useEffect(() => { refresh() }, []) // eslint-disable-line
@@ -119,6 +140,49 @@ export default function WatchPanel() {
         Every window runs the fixed chain: <b>Timestral detects → Safetral (Shieldstral) verifies → Large explains (printed)</b>.
         Safetral-rejected candidates are suppressed as false positives.
       </p>
+
+      <h3>Demo — replay stored incident data through the chain</h3>
+      <p className="muted">
+        Runs the windows of a stored incident bundle (from <code>raw/</code>) through the same fixed chain:
+        see Timestral raise the alarm, Safetral suppress the false positives, and Large 4 print the explanation.
+      </p>
+      <div className="row">
+        <select value={demoIncident} onChange={e => setDemoIncident(e.target.value)}>
+          <option value="">all incidents</option>
+          {incidents.map(i => <option key={i} value={i}>{i}</option>)}
+        </select>
+        <select value={demoScope} onChange={e => setDemoScope(e.target.value)} title="window scope">
+          <option value="incident">around incident</option>
+          <option value="full">full series (hard negatives)</option>
+        </select>
+        <label className="muted">max windows/metric
+          <input type="number" min="5" max="2000" value={demoMax} style={{ width: 70 }}
+            onChange={e => setDemoMax(Number(e.target.value))} />
+        </label>
+        <label><input type="checkbox" checked={shadow} onChange={e => setShadow(e.target.checked)} /> shadow mode</label>
+        <button onClick={runDemo} disabled={demoBusy}>{demoBusy ? 'Running…' : '▶ Run demo'}</button>
+      </div>
+      {demoRes && (
+        <>
+          <div className="summary-strip">
+            <span className="stat events"><b>{demoRes.totals.windows_evaluated}</b>windows</span>
+            <span className="stat events"><b>{demoRes.totals.detection_events}</b>timestral events</span>
+            <span className="stat alerts"><b>{demoRes.totals.alerts_fired}</b>alerts fired</span>
+            <span className="stat suppressed"><b>{demoRes.totals.suppressed_by_shieldstral}</b>suppressed (safetral)</span>
+            <span className="stat"><b>{demoRes.shadow ? 'SHADOW' : 'LIVE'}</b> · {demoRes.window_scope}</span>
+          </div>
+          {demoRes.incidents.map(inc => (
+            <div key={inc.incident_id}>
+              <h3 className="demo-inc">{inc.incident_id} — {inc.metrics.join(', ') || 'no metrics'}</h3>
+              {(!inc.chains || inc.chains.length === 0) && <p className="muted">no candidates in evaluated windows</p>}
+              {inc.chains.slice(-8).map((c, i) => <ChainRow key={i} chain={c} />)}
+              {inc.alerts.slice(-3).map(a => <AlertCard key={a.alert_id} alert={a} />)}
+            </div>
+          ))}
+        </>
+      )}
+
+      <h3>Live stream</h3>
       <div className="row">
         <select value={metric} onChange={e => setMetric(e.target.value)}>
           {metrics.length === 0 && <option value="">no metrics yet — run the pipeline</option>}

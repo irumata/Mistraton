@@ -1,6 +1,7 @@
-# Extra deps for running the whole website on Colab, incl. GPU fine-tuning of
-# Timestral. torch itself is preinstalled on Colab GPU runtimes.
-transformers>=4.46
+# Colab archive investigation and the optional legacy fine-tuning workspace.
+# torch itself is preinstalled on Colab GPU runtimes.
+timestral @ git+https://github.com/mistralai/timestral.git@a534bdbd244d64f3d9d743f46c7bf6fc330ed4ff
+transformers[mistral-common]>=5.3,<6
 peft>=0.13
 trl>=0.12
 accelerate>=1.1

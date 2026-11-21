@@ -2,58 +2,76 @@ version: 1
 window:
   length_seconds: 300
   step_seconds: 60
-  degraded_minutes: 30
-  default_lead_time_minutes: 20
+  degraded_minutes: 30.0
+  default_lead_time_minutes: 20.0
 metrics:
 - name: response_time_ms
-  source: hf-nginx-logs:metrics/access.csv#response_time_ms
+  source: nginx access logs (response time field)
   sampling_seconds: 60
-  aggregation: raw
+  aggregation: max, mean over n=31 samples
   expected_normal_range:
-  - '0'
-  - '600'
+  - '9'
+  - '500'
   observed_bad_range:
-  - '1000'
-  - '5000'
-  lead_time_minutes: 20
-  why_relevant: nginx response time from HF mindweave/web-server-logs sample; spikes
-    during injected anomalies
+  - '2026'
+  - '2026'
+  lead_time_minutes: 4.92
+  why_relevant: Captures the 2026ms spike at 08:28:59 indicating DDoS or resource
+    exhaustion; preceded by elevated 340ms latency at 08:24:04
 - name: error_5xx
-  source: hf-nginx-logs:metrics/access.csv#error_5xx
+  source: derived from status_code >= 500 in nginx access logs
   sampling_seconds: 60
-  aggregation: raw
+  aggregation: sum/count over window
   expected_normal_range:
   - '0'
-  - '0.1'
+  - '0'
   observed_bad_range:
-  - '0.5'
   - '1'
-  lead_time_minutes: 20
-  why_relevant: 5xx indicator per request; database-outage anomaly shows up here
+  - '1'
+  lead_time_minutes: 25.7
+  why_relevant: Detects the 500 error at 07:47:00 signaling database outage; preceded
+    by 400 Bad Request at 07:21:18
 - name: api_latency_ms
-  source: work/raw/*/metrics (synthesized; see work/synthesize_metrics.py)
+  source: 'metric export summary: api_latency_ms (n=301, min=72.12, max=3313, mean=778.3)'
   sampling_seconds: 60
-  aggregation: 1m_avg
+  aggregation: mean and max per export window
   expected_normal_range:
-  - '60'
-  - '100'
+  - '72.12'
+  - '778.3'
   observed_bad_range:
-  - '800'
-  - '5000'
-  lead_time_minutes: 25
-  why_relevant: synthetic precursor ramp before each incident (offline fixture)
+  - '778.3'
+  - '3313'
+  lead_time_minutes: 5.0
+  why_relevant: Tail latency on data-processing workers climbing from the mean toward
+    the max is consistent with unauthorized code execution and sandbox-swarm activity
+    starting before the incident was declared.
 - name: error_rate
-  source: work/raw/*/metrics (synthesized; see work/synthesize_metrics.py)
+  source: 'metric export summary: error_rate (n=301, min=0.00061, max=0.3238, mean=0.06797)'
   sampling_seconds: 60
-  aggregation: 1m_avg
+  aggregation: mean and max per export window
   expected_normal_range:
-  - '0'
-  - '0.005'
+  - '0.00061'
+  - '0.06797'
   observed_bad_range:
-  - '0.05'
-  - '0.5'
-  lead_time_minutes: 25
-  why_relevant: synthetic precursor ramp before each incident (offline fixture)
+  - '0.06797'
+  - '0.3238'
+  lead_time_minutes: 8.0
+  why_relevant: A sustained error-rate rise above the mean toward the max on dataset-loader/worker
+    endpoints is the earliest measurable precursor of malicious dataset probing and
+    failed/abusive code-execution attempts.
+- name: status_code
+  source: nginx access logs (http_status field)
+  sampling_seconds: 60
+  aggregation: distribution, mean
+  expected_normal_range:
+  - '200'
+  - '304'
+  observed_bad_range:
+  - '500'
+  - '500'
+  lead_time_minutes: 25.7
+  why_relevant: 500 status at 07:47:00 confirms server-side failure; 400 status at
+    07:21:18 served as early warning signal
 thresholds:
   band_k: 3.0
   persistence_windows: 3
@@ -64,3 +82,10 @@ thresholds:
 timestral:
   size: 5M
   backend: local
+chain:
+  verify_with_shieldstral: true
+  suppress_unverified: true
+  explain_with_large: true
+  explanation_max_chars: 4000
+policies_dir: /Users/rumata/Library/CloudStorage/GoogleDrive-nick.knyazev@gmail.com/My
+  Drive/Colab Notebooks/Mistraton/backend/sentinel_loop/policies

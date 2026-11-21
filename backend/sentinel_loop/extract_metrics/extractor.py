@@ -96,16 +96,25 @@ def extract_all(
     data_dir: str | Path,
     clients: MistralClients,
     config: MetricsConfig | None = None,
+    incident_ids: list[str] | None = None,
+    use_batch: bool = True,
 ) -> list[ExtractionOutput]:
-    """Run extraction for every ingested record; write per-incident JSON and
-    the merged metrics.yaml monitoring contract into the data dir."""
+    """Run extraction for ingested records (optionally a subset); write
+    per-incident JSON and merge ALL stored extractions (including previous
+    runs) into the metrics.yaml monitoring contract in the data dir."""
     data_dir = Path(data_dir)
     records = load_records(data_dir / "records.jsonl")
+    if incident_ids:
+        wanted = set(incident_ids)
+        records = [r for r in records if r.incident_id in wanted]
     out_dir = data_dir / "extractions"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     payloads = [build_user_payload(r, data_dir) for r in records]
-    raw_outputs = clients.large_extract_batch(EXTRACT_SYSTEM_PROMPT, payloads)
+    if use_batch and payloads:
+        raw_outputs = clients.large_extract_batch(EXTRACT_SYSTEM_PROMPT, payloads)
+    else:
+        raw_outputs = [clients.large_extract(EXTRACT_SYSTEM_PROMPT, p) for p in payloads]
 
     outputs: list[ExtractionOutput] = []
     for record, raw in zip(records, raw_outputs):
@@ -113,7 +122,7 @@ def extract_all(
         outputs.append(extraction)
         (out_dir / f"{record.incident_id}.json").write_text(extraction.model_dump_json(indent=2), encoding="utf-8")
 
-    merged_path = merge_metrics_yaml(outputs, data_dir, config)
+    merged_path = merge_metrics_yaml(load_extractions(data_dir), data_dir, config)
     return outputs
 
 
@@ -129,7 +138,20 @@ def merge_metrics_yaml(
     seen: dict[str, dict] = {m.name: m.model_dump() for m in config.metrics}
     for out in outputs:
         for md in out.metric_definitions:
-            seen[md.name] = md.model_dump()  # later incidents can refine ranges
+            if md.name in seen:
+                # refine an existing contract entry, but keep the most conservative
+                # lead time (min) so one long incident can't blow up labeling ranges
+                prev = seen[md.name]
+                merged = md.model_dump()
+                prev_lead = float(prev.get("lead_time_minutes") or 0)
+                new_lead = float(merged.get("lead_time_minutes") or 0)
+                if prev_lead and new_lead:
+                    merged["lead_time_minutes"] = min(prev_lead, new_lead)
+                elif prev_lead:
+                    merged["lead_time_minutes"] = prev_lead
+                seen[md.name] = merged
+            else:
+                seen[md.name] = md.model_dump()
     merged = MetricsConfig(
         version=config.version,
         window=config.window,
