@@ -82,7 +82,7 @@ def evaluate_strategy(
             lead_times.append(lead)
 
     per_class = {
-        state.value: _prf1(c["tp"], c["fp"], c["fn"]) for state, c in per_class_counts.items()
+        state: _prf1(c["tp"], c["fp"], c["fn"]) for state, c in per_class_counts.items()
     }
     fp = per_class_counts["precursor"]["fp"] + per_class_counts["incident"]["fp"]
     fp_rate = fp / window_hours * 1000.0 if window_hours else 0.0
